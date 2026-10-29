@@ -1,27 +1,58 @@
 # Virtual environment
 venv/
 .venv/
+env/
 
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
 
-# Jupyter
+# Jupyter Notebook
 .ipynb_checkpoints/
+*/.ipynb_checkpoints/*
 
-# IDE
+# IDE and Editor
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
 
-# Environment variables
+# Environment variables & secrets
 .env
+.env.*
 
-# Model files
+# Data policy: Do NOT commit heavy raw/processed data files
+# Data can be reproduced using src/data/download.py
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/interim/*
+!data/interim/.gitkeep
+*.csv
+*.csv.gz
+*.parquet
+
+# Model artifacts and binaries
+models/*
+!models/.gitkeep
 *.pkl
 *.joblib
 *.pt
 *.pth
+*.onnx
 
-# Temporary files
+# Results & optimization runs cache (optional large dumps)
+results/runs/*
+!results/.gitkeep
+
+# Temporary and extraction files
 *.tmp
 *.log
+docs/extracted_*.txt
+
+# OS-specific
+.DS_Store
+Thumbs.db
