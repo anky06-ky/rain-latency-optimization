@@ -87,13 +87,10 @@ def run_optuna_study(
         raw_window = clean_df.iloc[-L:]
         lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=150, warmup=15)
 
-        # 6. Set constraint in Optuna: violation <= 0 means feasible
+        # 6. Set constraint in Optuna: violation <= 0 means feasible (P95 <= 5.0 ms)
         p95_lat = lat_res["p95_latency_ms"]
-        latency_violation = p95_lat - LATENCY_CONSTRAINT_MS
-        if hasattr(trial, "set_constraint"):
-            trial.set_constraint("latency_constraint", latency_violation)
-        else:
-            trial.set_user_attr("constraint", [latency_violation])
+        latency_violation = float(p95_lat - LATENCY_CONSTRAINT_MS)
+        trial.set_user_attr("constraint", [latency_violation])
 
         record = {
             "trial": trial.number + 1,
@@ -116,8 +113,12 @@ def run_optuna_study(
 
         return val_rmse
 
-    # Create study with TPE sampler
-    sampler = optuna.samplers.TPESampler(seed=seed)
+    def constraints_func(trial: optuna.trial.FrozenTrial):
+        """Optuna TPESampler constraint function: returns list of floats, <= 0 is feasible."""
+        return trial.user_attrs.get("constraint", [0.0])
+
+    # Create study with Constrained TPE sampler
+    sampler = optuna.samplers.TPESampler(seed=seed, constraints_func=constraints_func)
     study = optuna.create_study(sampler=sampler, direction="minimize")
     study.optimize(objective, n_trials=n_trials)
 

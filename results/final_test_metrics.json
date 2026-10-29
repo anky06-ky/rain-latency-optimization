@@ -9,16 +9,37 @@
     "learning_rate": 0.0235,
     "min_child_samples": 10
   },
+  "optimization_comparison_across_seeds": {
+    "random_search_val_rmse_mean": 0.8344,
+    "random_search_val_rmse_std": 0.0015,
+    "optuna_tpe_val_rmse_mean": 0.8308,
+    "optuna_tpe_val_rmse_std": 0.0008,
+    "val_rmse_relative_difference_pct": 0.43
+  },
   "performance_across_splits": {
     "train_rmse": 0.8111,
     "val_rmse": 0.8301,
     "test_rmse": 1.1762,
     "test_mae": 0.3975,
-    "generalization_gap": 0.3651
+    "wet_test_rmse": 2.2669,
+    "rain_event_f1": 0.5774,
+    "train_val_gap": 0.019,
+    "train_test_gap": 0.3651
   },
   "latency_compliance": {
-    "test_p95_latency_ms": 2.48,
+    "test_p95_latency_ms": 3.56,
     "constraint_threshold_ms": 5.0,
     "constraint_satisfied": true
+  },
+  "data_split_specification": {
+    "train_hours": 17544,
+    "train_pct": 66.7,
+    "train_period": "2023-01-01 to 2024-12-31 (leap year 2024)",
+    "val_hours": 4344,
+    "val_pct": 16.5,
+    "val_period": "2025-01-01 to 2025-06-30",
+    "test_hours": 4416,
+    "test_pct": 16.8,
+    "test_period": "2025-07-01 to 2025-12-31 (monsoon peak)"
   }
 }

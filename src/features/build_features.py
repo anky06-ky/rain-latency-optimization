@@ -112,9 +112,9 @@ def split_time_series(df_feat: pd.DataFrame, feature_cols: List[str]) -> Tuple[
 ]:
     """
     Split time series chronologically without data leakage:
-    - Train: 2023-01-01 to 2024-12-31 (~70%)
-    - Validation: 2025-01-01 to 2025-06-30 (~15%)
-    - Test: 2025-07-01 to 2025-12-31 (~15%)
+    - Train: 2023-01-01 to 2024-12-31 (17,544 hours due to 2024 leap year, ~66.7%)
+    - Validation: 2025-01-01 to 2025-06-30 (4,344 hours, ~16.5%)
+    - Test: 2025-07-01 to 2025-12-31 (4,416 hours, ~16.8%)
     """
     train_mask = (df_feat["time"] >= "2023-01-01") & (df_feat["time"] <= "2024-12-31 23:59:59")
     val_mask = (df_feat["time"] >= "2025-01-01") & (df_feat["time"] <= "2025-06-30 23:59:59")
@@ -133,40 +133,42 @@ def split_time_series(df_feat: pd.DataFrame, feature_cols: List[str]) -> Tuple[
 
 def extract_single_sample_features(raw_window_slice: pd.DataFrame, L: int) -> np.ndarray:
     """
-    Fast feature extractor for single-sample end-to-end latency measurement.
+    Vectorized feature extractor for single-sample end-to-end latency measurement.
     Input: DataFrame of shape (L, num_features) representing the last L hours up to time t.
     Output: 2D numpy array of shape (1, num_features_D).
     """
-    # Raw columns ordered: temp, dwpt, rhum, pres, wspd, prcp_clean
-    feat_values = []
+    # Extract matrix of raw climate columns: temp, dwpt, rhum, pres, wspd, prcp_clean
+    arr = raw_window_slice[["temp", "dwpt", "rhum", "pres", "wspd", "prcp_clean"]].to_numpy(dtype=np.float32)
 
-    # Lag features (from latest t down to t - (L-1))
-    for lag in range(L):
-        idx = L - 1 - lag
-        row = raw_window_slice.iloc[idx]
-        feat_values.extend([
-            row["temp"], row["dwpt"], row["rhum"], row["pres"], row["wspd"], row["prcp_clean"]
-        ])
+    # Lags from lag 0 (latest, row L-1) down to lag L-1 (oldest, row 0)
+    # Row reversal arr[::-1] followed by flatten matches build_features column order exactly
+    lag_feats = arr[::-1].ravel()
+    parts = [lag_feats]
 
-    # Rolling statistics
+    # Rolling statistics (for L >= 3)
     if L >= 3:
-        prcp_series = raw_window_slice["prcp_clean"].values
-        feat_values.append(np.mean(prcp_series))
-        feat_values.append(np.max(prcp_series))
-        std_val = np.std(prcp_series)
-        feat_values.append(std_val if not np.isnan(std_val) else 0.0)
-        feat_values.append(np.mean(raw_window_slice["temp"].values))
-        feat_values.append(np.mean(raw_window_slice["rhum"].values))
+        prcp_series = arr[:, 5]
+        mean_p = float(np.mean(prcp_series))
+        max_p = float(np.max(prcp_series))
+        # Use ddof=1 to match pandas rolling().std() in build_features exactly
+        std_p = float(np.std(prcp_series, ddof=1)) if len(prcp_series) > 1 else 0.0
+        mean_t = float(np.mean(arr[:, 0]))
+        mean_r = float(np.mean(arr[:, 2]))
+        rolling_feats = np.array([mean_p, max_p, std_p, mean_t, mean_r], dtype=np.float32)
+        parts.append(rolling_feats)
 
-    # Cyclic time features from current timestamp
+    # Cyclic time features from current timestamp (time t)
     curr_time = raw_window_slice["time"].iloc[-1]
     h, m = curr_time.hour, curr_time.month
-    feat_values.append(np.sin(2 * np.pi * h / 24.0))
-    feat_values.append(np.cos(2 * np.pi * h / 24.0))
-    feat_values.append(np.sin(2 * np.pi * m / 12.0))
-    feat_values.append(np.cos(2 * np.pi * m / 12.0))
+    cyclic_feats = np.array([
+        np.sin(2.0 * np.pi * h / 24.0),
+        np.cos(2.0 * np.pi * h / 24.0),
+        np.sin(2.0 * np.pi * m / 12.0),
+        np.cos(2.0 * np.pi * m / 12.0),
+    ], dtype=np.float32)
+    parts.append(cyclic_feats)
 
-    return np.array(feat_values, dtype=np.float32).reshape(1, -1)
+    return np.concatenate(parts).reshape(1, -1)
 
 
 if __name__ == "__main__":
