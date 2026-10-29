@@ -1,0 +1,28 @@
+{
+  "best_configuration": {
+    "method": "OptunaTPE",
+    "L_hours": 1,
+    "n_features": 10,
+    "n_estimators": 200,
+    "max_depth": 6,
+    "num_leaves": 15,
+    "learning_rate": 0.0235,
+    "min_child_samples": 10
+  },
+  "validation_metrics": {
+    "val_rmse": 0.8297,
+    "val_mae": 0.2198,
+    "val_p95_latency_ms": 1.558
+  },
+  "final_test_evaluation": {
+    "test_period": "2025-07-01 to 2025-12-31",
+    "test_samples": 4398,
+    "test_rmse": 1.1762,
+    "test_mae": 0.3975,
+    "test_r2": 0.2127,
+    "test_mean_latency_ms": 1.674,
+    "test_p95_latency_ms": 2.767,
+    "test_feasible": true,
+    "constraint_satisfied": true
+  }
+}
