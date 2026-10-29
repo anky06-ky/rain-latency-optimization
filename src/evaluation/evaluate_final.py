@@ -199,17 +199,17 @@ def plot_actual_vs_predicted(clean_df: pd.DataFrame, model: Any, L: int):
     df_feat, fcols = build_features(clean_df, L=L)
     _, _, (X_te, y_te) = split_time_series(df_feat, fcols)
 
-    test_plot_df = df_feat[(df_feat["time"] >= "2025-07-01") & (df_feat["time"] <= "2025-12-31 23:59:59")].copy()
+    test_plot_df = df_feat[(df_feat["target_time"] >= "2025-07-01 00:00:00") & (df_feat["target_time"] <= "2025-12-31 23:59:59")].copy()
     test_plot_df["actual"] = y_te.values
     test_plot_df["pred"] = model.predict(X_te)
-    test_plot_df["time"] = test_plot_df["time"].dt.tz_localize(None)
+    test_plot_df["target_time"] = test_plot_df["target_time"].dt.tz_localize(None)
 
     # Select October 2025 (peak storm period)
-    oct_sample = test_plot_df[(test_plot_df["time"] >= "2025-10-01") & (test_plot_df["time"] <= "2025-10-15 23:59:59")]
+    oct_sample = test_plot_df[(test_plot_df["target_time"] >= "2025-10-01") & (test_plot_df["target_time"] <= "2025-10-15 23:59:59")]
 
     plt.figure(figsize=(13, 5))
-    plt.plot(oct_sample["time"], oct_sample["actual"], label="Lượng mưa thực tế (Actual prcp)", color="#2b8cbe", linewidth=2.2, marker="o", markersize=4)
-    plt.plot(oct_sample["time"], oct_sample["pred"], label="Mô hình tối ưu dự báo (Predicted by Optuna TPE)", color="#e6550d", linestyle="--", linewidth=2, marker="s", markersize=3)
+    plt.plot(oct_sample["target_time"], oct_sample["actual"], label="Lượng mưa thực tế (Actual prcp)", color="#2b8cbe", linewidth=2.2, marker="o", markersize=4)
+    plt.plot(oct_sample["target_time"], oct_sample["pred"], label="Mô hình tối ưu dự báo (Predicted by Optuna TPE)", color="#e6550d", linestyle="--", linewidth=2, marker="s", markersize=3)
     plt.title("Đối chiếu Thực tế vs Dự báo trên Tập Test (Nửa đầu Tháng 10/2025 - Đỉnh mùa mưa)", fontsize=12, fontweight="bold")
     plt.xlabel("Thời gian", fontsize=11)
     plt.ylabel("Lượng mưa 1h tới (mm)", fontsize=11)
@@ -452,9 +452,15 @@ def evaluate_final_test_set():
     best_rnd_config = feasible_rnd.loc[feasible_rnd["val_rmse"].idxmin()]
     best_opt_config = feasible_opt.loc[feasible_opt["val_rmse"].idxmin()]
 
-    # 5. Compute rigorous seed-level statistics (mean +/- std)
+    # 5. Compute rigorous seed-level statistics (mean +/- std) and paired t-test
     rnd_seed_best = feasible_rnd.groupby("seed")["val_rmse"].min()
     opt_seed_best = feasible_opt.groupby("seed")["val_rmse"].min()
+
+    common_seeds = sorted(list(set(rnd_seed_best.index).intersection(set(opt_seed_best.index))))
+    rnd_vals = [float(rnd_seed_best[s]) for s in common_seeds]
+    opt_vals = [float(opt_seed_best[s]) for s in common_seeds]
+    from scipy.stats import ttest_rel
+    t_stat, p_val = ttest_rel(rnd_vals, opt_vals)
 
     # 6. Multi-Model Benchmark across Train, Validation, and Test
     bench_df, final_model = run_multi_model_benchmark(clean_df, best_opt_config, best_rnd_config)
@@ -476,11 +482,14 @@ def evaluate_final_test_set():
             "min_child_samples": int(best_opt_config["min_child_samples"]),
         },
         "optimization_comparison_across_seeds": {
+            "seeds_evaluated": common_seeds,
             "random_search_val_rmse_mean": round(float(rnd_seed_best.mean()), 4),
             "random_search_val_rmse_std": round(float(rnd_seed_best.std()), 4),
             "optuna_tpe_val_rmse_mean": round(float(opt_seed_best.mean()), 4),
             "optuna_tpe_val_rmse_std": round(float(opt_seed_best.std()), 4),
             "val_rmse_relative_difference_pct": round(float((rnd_seed_best.mean() - opt_seed_best.mean()) / rnd_seed_best.mean() * 100), 2),
+            "paired_t_statistic": round(float(t_stat), 4),
+            "paired_t_p_value": round(float(p_val), 4),
         },
         "performance_across_splits": {
             "train_rmse": float(best_row["Train_RMSE"]),
