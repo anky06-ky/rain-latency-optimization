@@ -44,9 +44,10 @@ models/*
 *.pth
 *.onnx
 
-# Results & optimization runs cache (optional large dumps)
+# Results & optimization runs cache (allow summary CSVs and figures, ignore huge runs)
 results/runs/*
 !results/.gitkeep
+!results/*.csv
 
 # Temporary and extraction files
 *.tmp

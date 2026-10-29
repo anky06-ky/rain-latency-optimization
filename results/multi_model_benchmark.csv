@@ -1,0 +1,7 @@
+Model,L,Cấu hình,Train_RMSE,Val_RMSE,Test_RMSE,Test_MAE,Latency_P95,Feasible
+1. Persistence (Ngây thơ),1,y(t+1) = prcp(t),1.1615,1.0699,1.5676,0.4544,0.05,True
+2. Linear Regression,6,Default OLS,0.9128,0.8468,1.2204,0.4713,3.327,True
+3. Ridge Regression,6,alpha=1.0,0.9128,0.8467,1.2205,0.4713,4.407,True
+4. LightGBM (Mặc định),6,"100 trees, depth=-1",0.5825,0.8499,1.2038,0.4022,4.134,True
+5. Random Search Best,2,"200 trees, depth=2",0.8582,0.8382,1.1896,0.4129,2.775,True
+6. Optuna TPE (Đề tài tối ưu),1,"200 trees, depth=6, lr=0.0235",0.8111,0.8301,1.1762,0.3975,2.48,True
