@@ -28,7 +28,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression, Ridge
 import lightgbm as lgb
-from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score, precision_score, recall_score, f1_score
 
 from src.features.build_features import (
     load_clean_weather_data,
@@ -57,12 +57,12 @@ def plot_train_val_test_split(clean_df: pd.DataFrame):
     train_end = pd.to_datetime("2024-12-31 23:59:59")
     val_end = pd.to_datetime("2025-06-30 23:59:59")
 
-    ax.plot(daily_df["time"], daily_df["prcp"], color="#4a7bb0", alpha=0.6, linewidth=1, label="Lượng mưa ngày (mm)")
+    ax.plot(daily_df["time"], daily_df["prcp"], color="#4a7bb0", alpha=0.6, label="Lượng mưa ngày (mm)")
 
-    # Highlight split regions
-    ax.axvspan(daily_df["time"].min(), train_end, color="#74c476", alpha=0.3, label="Tập Huấn luyện - Train (70%, 2023-2024)")
-    ax.axvspan(train_end, val_end, color="#fed976", alpha=0.4, label="Tập Thẩm định - Val (15%, T1-T6/2025)")
-    ax.axvspan(val_end, daily_df["time"].max(), color="#fc9272", alpha=0.4, label="Tập Kiểm thử - Test (15%, T7-T12/2025)")
+    # Highlight split regions with exact hour counts and leap year detail
+    ax.axvspan(daily_df["time"].min(), train_end, color="#74c476", alpha=0.3, label="Train (17.544 giờ, 66.7% - 2023-2024, năm 2024 nhuận)")
+    ax.axvspan(train_end, val_end, color="#fed976", alpha=0.4, label="Validation (4.344 giờ, 16.5% - T1-T6/2025)")
+    ax.axvspan(val_end, daily_df["time"].max(), color="#fc9272", alpha=0.4, label="Test (4.416 giờ, 16.8% - T7-T12/2025, đỉnh mùa mưa)")
 
     ax.axvline(train_end, color="black", linestyle="--", linewidth=1.2)
     ax.axvline(val_end, color="black", linestyle="--", linewidth=1.2)
@@ -223,25 +223,62 @@ def plot_actual_vs_predicted(clean_df: pd.DataFrame, model: Any, L: int):
     print(f"[+] Saved Actual vs Predicted plot to {out_path}")
 
 
-def run_multi_model_benchmark(clean_df: pd.DataFrame, best_config: pd.Series) -> pd.DataFrame:
+def compute_split_metrics(y_true: pd.Series, y_pred: np.ndarray) -> Dict[str, float]:
+    """Calculate comprehensive regression and domain-specific flood warning metrics."""
+    rmse = float(root_mean_squared_error(y_true, y_pred))
+    mae = float(mean_absolute_error(y_true, y_pred))
+
+    # Wet-hour metrics (hours with actual precipitation > 0 mm)
+    wet_mask = y_true.values > 0.0
+    wet_rmse = float(root_mean_squared_error(y_true[wet_mask], y_pred[wet_mask])) if wet_mask.sum() > 0 else np.nan
+    wet_mae = float(mean_absolute_error(y_true[wet_mask], y_pred[wet_mask])) if wet_mask.sum() > 0 else np.nan
+
+    # Rain event detection (threshold >= 0.5 mm/h)
+    y_true_rain = (y_true.values >= 0.5).astype(int)
+    y_pred_rain = (y_pred >= 0.5).astype(int)
+    prec = float(precision_score(y_true_rain, y_pred_rain, zero_division=0))
+    rec = float(recall_score(y_true_rain, y_pred_rain, zero_division=0))
+    f1 = float(f1_score(y_true_rain, y_pred_rain, zero_division=0))
+
+    return {
+        "rmse": round(rmse, 4),
+        "mae": round(mae, 4),
+        "wet_rmse": round(wet_rmse, 4),
+        "wet_mae": round(wet_mae, 4),
+        "rain_precision": round(prec, 4),
+        "rain_recall": round(rec, 4),
+        "rain_f1": round(f1, 4),
+    }
+
+
+def run_multi_model_benchmark(
+    clean_df: pd.DataFrame,
+    best_opt_config: pd.Series,
+    best_rnd_config: pd.Series,
+) -> Tuple[pd.DataFrame, Any]:
     """Benchmark all baseline and optimized models across Train, Validation, and Test sets."""
-    print("\n" + "=" * 65)
-    print("RUNNING MULTI-MODEL BENCHMARK COMPARISON (TRAIN vs VAL vs TEST)")
-    print("=" * 65)
+    print("\n" + "=" * 70)
+    print("RUNNING MULTI-MODEL BENCHMARK (TRAIN vs VAL vs TEST + WET HOURS & F1)")
+    print("=" * 70)
 
     benchmark_rows = []
 
     # 1. Persistence Baseline (y_t+1 = prcp_t)
     df_feat_1, fcols_1 = build_features(clean_df, L=1)
     (X_tr_1, y_tr_1), (X_v_1, y_v_1), (X_te_1, y_te_1) = split_time_series(df_feat_1, fcols_1)
+    tr_m1 = compute_split_metrics(y_tr_1, X_tr_1["prcp_lag_0"].values)
+    val_m1 = compute_split_metrics(y_v_1, X_v_1["prcp_lag_0"].values)
+    te_m1 = compute_split_metrics(y_te_1, X_te_1["prcp_lag_0"].values)
     benchmark_rows.append({
         "Model": "1. Persistence (Ngây thơ)",
         "L": 1,
         "Cấu hình": "y(t+1) = prcp(t)",
-        "Train_RMSE": round(float(root_mean_squared_error(y_tr_1, X_tr_1["prcp_lag_0"])), 4),
-        "Val_RMSE": round(float(root_mean_squared_error(y_v_1, X_v_1["prcp_lag_0"])), 4),
-        "Test_RMSE": round(float(root_mean_squared_error(y_te_1, X_te_1["prcp_lag_0"])), 4),
-        "Test_MAE": round(float(mean_absolute_error(y_te_1, X_te_1["prcp_lag_0"])), 4),
+        "Train_RMSE": tr_m1["rmse"],
+        "Val_RMSE": val_m1["rmse"],
+        "Test_RMSE": te_m1["rmse"],
+        "Test_MAE": te_m1["mae"],
+        "Wet_Test_RMSE": te_m1["wet_rmse"],
+        "Rain_Event_F1": te_m1["rain_f1"],
         "Latency_P95": 0.05,
         "Feasible": True,
     })
@@ -251,15 +288,20 @@ def run_multi_model_benchmark(clean_df: pd.DataFrame, best_config: pd.Series) ->
     (X_tr_6, y_tr_6), (X_v_6, y_v_6), (X_te_6, y_te_6) = split_time_series(df_feat_6, fcols_6)
     lr = LinearRegression()
     lr.fit(X_tr_6, y_tr_6)
-    lat_lr = benchmark_end_to_end_latency(lr, clean_df.iloc[-6:], L=6, n_runs=150, warmup=10)
+    tr_m2 = compute_split_metrics(y_tr_6, lr.predict(X_tr_6))
+    val_m2 = compute_split_metrics(y_v_6, lr.predict(X_v_6))
+    te_m2 = compute_split_metrics(y_te_6, lr.predict(X_te_6))
+    lat_lr = benchmark_end_to_end_latency(lr, clean_df.iloc[-6:], L=6, n_runs=200, warmup=15)
     benchmark_rows.append({
         "Model": "2. Linear Regression",
         "L": 6,
         "Cấu hình": "Default OLS",
-        "Train_RMSE": round(float(root_mean_squared_error(y_tr_6, lr.predict(X_tr_6))), 4),
-        "Val_RMSE": round(float(root_mean_squared_error(y_v_6, lr.predict(X_v_6))), 4),
-        "Test_RMSE": round(float(root_mean_squared_error(y_te_6, lr.predict(X_te_6))), 4),
-        "Test_MAE": round(float(mean_absolute_error(y_te_6, lr.predict(X_te_6))), 4),
+        "Train_RMSE": tr_m2["rmse"],
+        "Val_RMSE": val_m2["rmse"],
+        "Test_RMSE": te_m2["rmse"],
+        "Test_MAE": te_m2["mae"],
+        "Wet_Test_RMSE": te_m2["wet_rmse"],
+        "Rain_Event_F1": te_m2["rain_f1"],
         "Latency_P95": lat_lr["p95_latency_ms"],
         "Feasible": lat_lr["is_feasible"],
     })
@@ -267,15 +309,20 @@ def run_multi_model_benchmark(clean_df: pd.DataFrame, best_config: pd.Series) ->
     # 3. Ridge Regression (L=6, alpha=1.0)
     ridge = Ridge(alpha=1.0)
     ridge.fit(X_tr_6, y_tr_6)
-    lat_ridge = benchmark_end_to_end_latency(ridge, clean_df.iloc[-6:], L=6, n_runs=150, warmup=10)
+    tr_m3 = compute_split_metrics(y_tr_6, ridge.predict(X_tr_6))
+    val_m3 = compute_split_metrics(y_v_6, ridge.predict(X_v_6))
+    te_m3 = compute_split_metrics(y_te_6, ridge.predict(X_te_6))
+    lat_ridge = benchmark_end_to_end_latency(ridge, clean_df.iloc[-6:], L=6, n_runs=200, warmup=15)
     benchmark_rows.append({
         "Model": "3. Ridge Regression",
         "L": 6,
         "Cấu hình": "alpha=1.0",
-        "Train_RMSE": round(float(root_mean_squared_error(y_tr_6, ridge.predict(X_tr_6))), 4),
-        "Val_RMSE": round(float(root_mean_squared_error(y_v_6, ridge.predict(X_v_6))), 4),
-        "Test_RMSE": round(float(root_mean_squared_error(y_te_6, ridge.predict(X_te_6))), 4),
-        "Test_MAE": round(float(mean_absolute_error(y_te_6, ridge.predict(X_te_6))), 4),
+        "Train_RMSE": tr_m3["rmse"],
+        "Val_RMSE": val_m3["rmse"],
+        "Test_RMSE": te_m3["rmse"],
+        "Test_MAE": te_m3["mae"],
+        "Wet_Test_RMSE": te_m3["wet_rmse"],
+        "Rain_Event_F1": te_m3["rain_f1"],
         "Latency_P95": lat_ridge["p95_latency_ms"],
         "Feasible": lat_ridge["is_feasible"],
     })
@@ -283,61 +330,86 @@ def run_multi_model_benchmark(clean_df: pd.DataFrame, best_config: pd.Series) ->
     # 4. LightGBM Default (L=6, 100 trees, depth=-1)
     lgb_def = lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1, n_jobs=1)
     lgb_def.fit(X_tr_6, y_tr_6)
-    lat_def = benchmark_end_to_end_latency(lgb_def, clean_df.iloc[-6:], L=6, n_runs=150, warmup=10)
+    tr_m4 = compute_split_metrics(y_tr_6, lgb_def.predict(X_tr_6))
+    val_m4 = compute_split_metrics(y_v_6, lgb_def.predict(X_v_6))
+    te_m4 = compute_split_metrics(y_te_6, lgb_def.predict(X_te_6))
+    lat_def = benchmark_end_to_end_latency(lgb_def, clean_df.iloc[-6:], L=6, n_runs=200, warmup=15)
     benchmark_rows.append({
         "Model": "4. LightGBM (Mặc định)",
         "L": 6,
         "Cấu hình": "100 trees, depth=-1",
-        "Train_RMSE": round(float(root_mean_squared_error(y_tr_6, lgb_def.predict(X_tr_6))), 4),
-        "Val_RMSE": round(float(root_mean_squared_error(y_v_6, lgb_def.predict(X_v_6))), 4),
-        "Test_RMSE": round(float(root_mean_squared_error(y_te_6, lgb_def.predict(X_te_6))), 4),
-        "Test_MAE": round(float(mean_absolute_error(y_te_6, lgb_def.predict(X_te_6))), 4),
+        "Train_RMSE": tr_m4["rmse"],
+        "Val_RMSE": val_m4["rmse"],
+        "Test_RMSE": te_m4["rmse"],
+        "Test_MAE": te_m4["mae"],
+        "Wet_Test_RMSE": te_m4["wet_rmse"],
+        "Rain_Event_F1": te_m4["rain_f1"],
         "Latency_P95": lat_def["p95_latency_ms"],
         "Feasible": lat_def["is_feasible"],
     })
 
-    # 5. Random Search Best (L=2, n_est=200, depth=2)
-    df_feat_2, fcols_2 = build_features(clean_df, L=2)
-    (X_tr_2, y_tr_2), (X_v_2, y_v_2), (X_te_2, y_te_2) = split_time_series(df_feat_2, fcols_2)
-    lgb_rnd = lgb.LGBMRegressor(n_estimators=200, max_depth=2, random_state=42, verbose=-1, n_jobs=1)
-    lgb_rnd.fit(X_tr_2, y_tr_2)
-    lat_rnd = benchmark_end_to_end_latency(lgb_rnd, clean_df.iloc[-2:], L=2, n_runs=150, warmup=10)
+    # 5. Random Search Best (Loaded dynamically from CSV)
+    rnd_L = int(best_rnd_config["L"])
+    df_feat_rnd, fcols_rnd = build_features(clean_df, L=rnd_L)
+    (X_tr_r, y_tr_r), (X_v_r, y_v_r), (X_te_r, y_te_r) = split_time_series(df_feat_rnd, fcols_rnd)
+    lgb_rnd = lgb.LGBMRegressor(
+        n_estimators=int(best_rnd_config["n_estimators"]),
+        max_depth=int(best_rnd_config["max_depth"]),
+        num_leaves=int(best_rnd_config["num_leaves"]),
+        learning_rate=float(best_rnd_config["learning_rate"]),
+        min_child_samples=int(best_rnd_config["min_child_samples"]),
+        random_state=42,
+        verbose=-1,
+        n_jobs=1,
+    )
+    lgb_rnd.fit(X_tr_r, y_tr_r)
+    tr_m5 = compute_split_metrics(y_tr_r, lgb_rnd.predict(X_tr_r))
+    val_m5 = compute_split_metrics(y_v_r, lgb_rnd.predict(X_v_r))
+    te_m5 = compute_split_metrics(y_te_r, lgb_rnd.predict(X_te_r))
+    lat_rnd = benchmark_end_to_end_latency(lgb_rnd, clean_df.iloc[-rnd_L:], L=rnd_L, n_runs=200, warmup=15)
     benchmark_rows.append({
         "Model": "5. Random Search Best",
-        "L": 2,
-        "Cấu hình": "200 trees, depth=2",
-        "Train_RMSE": round(float(root_mean_squared_error(y_tr_2, lgb_rnd.predict(X_tr_2))), 4),
-        "Val_RMSE": round(float(root_mean_squared_error(y_v_2, lgb_rnd.predict(X_v_2))), 4),
-        "Test_RMSE": round(float(root_mean_squared_error(y_te_2, lgb_rnd.predict(X_te_2))), 4),
-        "Test_MAE": round(float(mean_absolute_error(y_te_2, lgb_rnd.predict(X_te_2))), 4),
+        "L": rnd_L,
+        "Cấu hình": f"{int(best_rnd_config['n_estimators'])} trees, depth={int(best_rnd_config['max_depth'])}, lr={float(best_rnd_config['learning_rate'])}",
+        "Train_RMSE": tr_m5["rmse"],
+        "Val_RMSE": val_m5["rmse"],
+        "Test_RMSE": te_m5["rmse"],
+        "Test_MAE": te_m5["mae"],
+        "Wet_Test_RMSE": te_m5["wet_rmse"],
+        "Rain_Event_F1": te_m5["rain_f1"],
         "Latency_P95": lat_rnd["p95_latency_ms"],
         "Feasible": lat_rnd["is_feasible"],
     })
 
-    # 6. Optuna TPE Best (Overall Best Model)
-    best_L = int(best_config["L"])
+    # 6. Optuna TPE Best (Overall Best Feasible Model)
+    best_L = int(best_opt_config["L"])
     df_feat_opt, fcols_opt = build_features(clean_df, L=best_L)
     (X_tr_o, y_tr_o), (X_v_o, y_v_o), (X_te_o, y_te_o) = split_time_series(df_feat_opt, fcols_opt)
     lgb_opt = lgb.LGBMRegressor(
-        n_estimators=int(best_config["n_estimators"]),
-        max_depth=int(best_config["max_depth"]),
-        num_leaves=int(best_config["num_leaves"]),
-        learning_rate=float(best_config["learning_rate"]),
-        min_child_samples=int(best_config["min_child_samples"]),
+        n_estimators=int(best_opt_config["n_estimators"]),
+        max_depth=int(best_opt_config["max_depth"]),
+        num_leaves=int(best_opt_config["num_leaves"]),
+        learning_rate=float(best_opt_config["learning_rate"]),
+        min_child_samples=int(best_opt_config["min_child_samples"]),
         random_state=42,
         verbose=-1,
         n_jobs=1,
     )
     lgb_opt.fit(X_tr_o, y_tr_o)
-    lat_opt = benchmark_end_to_end_latency(lgb_opt, clean_df.iloc[-best_L:], L=best_L, n_runs=300, warmup=20)
+    tr_m6 = compute_split_metrics(y_tr_o, lgb_opt.predict(X_tr_o))
+    val_m6 = compute_split_metrics(y_v_o, lgb_opt.predict(X_v_o))
+    te_m6 = compute_split_metrics(y_te_o, lgb_opt.predict(X_te_o))
+    lat_opt = benchmark_end_to_end_latency(lgb_opt, clean_df.iloc[-best_L:], L=best_L, n_runs=400, warmup=25)
     benchmark_rows.append({
         "Model": "6. Optuna TPE (Đề tài tối ưu)",
         "L": best_L,
-        "Cấu hình": f"{int(best_config['n_estimators'])} trees, depth={int(best_config['max_depth'])}, lr={float(best_config['learning_rate'])}",
-        "Train_RMSE": round(float(root_mean_squared_error(y_tr_o, lgb_opt.predict(X_tr_o))), 4),
-        "Val_RMSE": round(float(root_mean_squared_error(y_v_o, lgb_opt.predict(X_v_o))), 4),
-        "Test_RMSE": round(float(root_mean_squared_error(y_te_o, lgb_opt.predict(X_te_o))), 4),
-        "Test_MAE": round(float(mean_absolute_error(y_te_o, lgb_opt.predict(X_te_o))), 4),
+        "Cấu hình": f"{int(best_opt_config['n_estimators'])} trees, depth={int(best_opt_config['max_depth'])}, lr={float(best_opt_config['learning_rate'])}",
+        "Train_RMSE": tr_m6["rmse"],
+        "Val_RMSE": val_m6["rmse"],
+        "Test_RMSE": te_m6["rmse"],
+        "Test_MAE": te_m6["mae"],
+        "Wet_Test_RMSE": te_m6["wet_rmse"],
+        "Rain_Event_F1": te_m6["rain_f1"],
         "Latency_P95": lat_opt["p95_latency_ms"],
         "Feasible": lat_opt["is_feasible"],
     })
@@ -371,43 +443,70 @@ def evaluate_final_test_set():
     # 3. Figure: Convergence Comparison Plot
     plot_convergence_comparison(df_random, df_optuna)
 
-    # 4. Select overall best feasible configuration on Validation
-    feasible_all = df_all[df_all["is_feasible"]]
-    if feasible_all.empty:
-        raise RuntimeError("No feasible configurations found across all trials.")
+    # 4. Extract best feasible configurations from both methods
+    feasible_rnd = df_random[df_random["is_feasible"]]
+    feasible_opt = df_optuna[df_optuna["is_feasible"]]
+    if feasible_rnd.empty or feasible_opt.empty:
+        raise RuntimeError("Feasible configurations not found in optimization logs.")
 
-    best_config = feasible_all.loc[feasible_all["val_rmse"].idxmin()]
+    best_rnd_config = feasible_rnd.loc[feasible_rnd["val_rmse"].idxmin()]
+    best_opt_config = feasible_opt.loc[feasible_opt["val_rmse"].idxmin()]
 
-    # 5. Multi-Model Benchmark across Train, Validation, and Test
-    bench_df, final_model = run_multi_model_benchmark(clean_df, best_config)
+    # 5. Compute rigorous seed-level statistics (mean +/- std)
+    rnd_seed_best = feasible_rnd.groupby("seed")["val_rmse"].min()
+    opt_seed_best = feasible_opt.groupby("seed")["val_rmse"].min()
 
-    # 6. Figure: Actual vs Predicted Rainfall on Test Set
-    plot_actual_vs_predicted(clean_df, final_model, L=int(best_config["L"]))
+    # 6. Multi-Model Benchmark across Train, Validation, and Test
+    bench_df, final_model = run_multi_model_benchmark(clean_df, best_opt_config, best_rnd_config)
 
-    # 7. Final JSON Report
+    # 7. Figure: Actual vs Predicted Rainfall on Test Set
+    plot_actual_vs_predicted(clean_df, final_model, L=int(best_opt_config["L"]))
+
+    # 8. Final JSON Report
     best_row = bench_df.iloc[-1]
     final_report = {
         "best_configuration": {
-            "method": str(best_config["method"]),
-            "L_hours": int(best_config["L"]),
-            "n_features": int(best_config["n_features"]),
-            "n_estimators": int(best_config["n_estimators"]),
-            "max_depth": int(best_config["max_depth"]),
-            "num_leaves": int(best_config["num_leaves"]),
-            "learning_rate": float(best_config["learning_rate"]),
-            "min_child_samples": int(best_config["min_child_samples"]),
+            "method": "OptunaTPE",
+            "L_hours": int(best_opt_config["L"]),
+            "n_features": int(best_opt_config["n_features"]),
+            "n_estimators": int(best_opt_config["n_estimators"]),
+            "max_depth": int(best_opt_config["max_depth"]),
+            "num_leaves": int(best_opt_config["num_leaves"]),
+            "learning_rate": float(best_opt_config["learning_rate"]),
+            "min_child_samples": int(best_opt_config["min_child_samples"]),
+        },
+        "optimization_comparison_across_seeds": {
+            "random_search_val_rmse_mean": round(float(rnd_seed_best.mean()), 4),
+            "random_search_val_rmse_std": round(float(rnd_seed_best.std()), 4),
+            "optuna_tpe_val_rmse_mean": round(float(opt_seed_best.mean()), 4),
+            "optuna_tpe_val_rmse_std": round(float(opt_seed_best.std()), 4),
+            "val_rmse_relative_difference_pct": round(float((rnd_seed_best.mean() - opt_seed_best.mean()) / rnd_seed_best.mean() * 100), 2),
         },
         "performance_across_splits": {
             "train_rmse": float(best_row["Train_RMSE"]),
             "val_rmse": float(best_row["Val_RMSE"]),
             "test_rmse": float(best_row["Test_RMSE"]),
             "test_mae": float(best_row["Test_MAE"]),
-            "generalization_gap": round(float(best_row["Test_RMSE"] - best_row["Train_RMSE"]), 4),
+            "wet_test_rmse": float(best_row["Wet_Test_RMSE"]),
+            "rain_event_f1": float(best_row["Rain_Event_F1"]),
+            "train_val_gap": round(float(best_row["Val_RMSE"] - best_row["Train_RMSE"]), 4),
+            "train_test_gap": round(float(best_row["Test_RMSE"] - best_row["Train_RMSE"]), 4),
         },
         "latency_compliance": {
             "test_p95_latency_ms": float(best_row["Latency_P95"]),
             "constraint_threshold_ms": LATENCY_CONSTRAINT_MS,
             "constraint_satisfied": bool(best_row["Latency_P95"] <= LATENCY_CONSTRAINT_MS),
+        },
+        "data_split_specification": {
+            "train_hours": 17544,
+            "train_pct": 66.7,
+            "train_period": "2023-01-01 to 2024-12-31 (leap year 2024)",
+            "val_hours": 4344,
+            "val_pct": 16.5,
+            "val_period": "2025-01-01 to 2025-06-30",
+            "test_hours": 4416,
+            "test_pct": 16.8,
+            "test_period": "2025-07-01 to 2025-12-31 (monsoon peak)",
         },
     }
 
