@@ -81,29 +81,29 @@ def plot_train_val_test_split(clean_df: pd.DataFrame):
 
 
 def plot_pareto_frontier(df_all: pd.DataFrame):
-    """Plot Validation RMSE vs Latency, showing the 5.0 ms constraint boundary and Pareto front."""
+    """Plot Validation RMSE vs Latency trade-off, highlighting the actual non-dominated Pareto frontier."""
     plt.figure(figsize=(10, 6))
 
-    feasible = df_all[df_all["is_feasible"]]
-    infeasible = df_all[~df_all["is_feasible"]]
+    feasible = df_all[df_all["is_feasible"]].copy()
+    infeasible = df_all[~df_all["is_feasible"]].copy()
 
-    # Scatter plot
+    # Scatter plot of all trials
     plt.scatter(
         feasible["p95_latency_ms"],
         feasible["val_rmse"],
         c="#2b8cbe",
-        alpha=0.7,
+        alpha=0.55,
         edgecolors="k",
-        s=50,
-        label=f"Nghiệm khả thi (<= {LATENCY_CONSTRAINT_MS} ms)",
+        s=45,
+        label=f"Nghiệm khả thi (P95 <= {LATENCY_CONSTRAINT_MS} ms)",
     )
     plt.scatter(
         infeasible["p95_latency_ms"],
         infeasible["val_rmse"],
         c="#e34a33",
-        alpha=0.4,
+        alpha=0.35,
         edgecolors="k",
-        s=40,
+        s=35,
         marker="x",
         label=f"Vi phạm ràng buộc (> {LATENCY_CONSTRAINT_MS} ms)",
     )
@@ -117,21 +117,50 @@ def plot_pareto_frontier(df_all: pd.DataFrame):
         label=f"Ràng buộc Latency ({LATENCY_CONSTRAINT_MS} ms)",
     )
 
-    # Highlight best feasible
+    # Compute actual Non-Dominated Pareto Frontier among feasible points
     if not feasible.empty:
+        feasible_sorted = feasible.sort_values("p95_latency_ms").reset_index(drop=True)
+        pareto_records = []
+        min_so_far = float("inf")
+        for _, row in feasible_sorted.iterrows():
+            if row["val_rmse"] < min_so_far:
+                min_so_far = row["val_rmse"]
+                pareto_records.append(row)
+
+        pareto_df = pd.DataFrame(pareto_records)
+        if not pareto_df.empty:
+            plt.step(
+                pareto_df["p95_latency_ms"],
+                pareto_df["val_rmse"],
+                where="post",
+                color="#e6550d",
+                linewidth=2.2,
+                linestyle="-",
+                label="Biên Pareto Non-Dominated (Khả thi)",
+                zorder=3,
+            )
+            plt.scatter(
+                pareto_df["p95_latency_ms"],
+                pareto_df["val_rmse"],
+                color="#e6550d",
+                edgecolors="black",
+                s=70,
+                zorder=4,
+            )
+
         best_row = feasible.loc[feasible["val_rmse"].idxmin()]
         plt.scatter(
             [best_row["p95_latency_ms"]],
             [best_row["val_rmse"]],
             color="#fd8d3c",
             edgecolors="black",
-            s=180,
+            s=220,
             marker="*",
             zorder=5,
             label=f"Nghiệm tối ưu: L={int(best_row['L'])}h (RMSE={best_row['val_rmse']:.4f})",
         )
 
-    plt.title("Biên tối ưu Pareto: Sai số dự báo (RMSE) vs Độ trễ suy luận (Latency)", fontsize=12, fontweight="bold")
+    plt.title("Đánh đổi Khả thi: Sai số Validation (RMSE) vs Độ trễ suy luận ($T_{e2e}$)", fontsize=12, fontweight="bold")
     plt.xlabel("End-to-End Latency P95 (ms)", fontsize=11)
     plt.ylabel("Validation RMSE (mm/h)", fontsize=11)
     plt.grid(True, linestyle=":", alpha=0.6)
@@ -141,7 +170,7 @@ def plot_pareto_frontier(df_all: pd.DataFrame):
     out_path = FIGURES_DIR / "pareto_frontier.png"
     plt.savefig(out_path, dpi=200)
     plt.close()
-    print(f"[+] Saved Pareto frontier plot to {out_path}")
+    print(f"[+] Saved Feasible RMSE-Latency Trade-Off plot to {out_path}")
 
 
 def plot_convergence_comparison(df_random: pd.DataFrame, df_optuna: pd.DataFrame):

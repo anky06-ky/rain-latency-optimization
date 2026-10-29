@@ -92,8 +92,9 @@ def evaluate_candidate(
     val_rmse = float(root_mean_squared_error(y_v, y_val_pred))
     val_mae = float(mean_absolute_error(y_v, y_val_pred))
 
-    # 4. End-to-End Latency Measurement
-    raw_window = clean_df.iloc[-L:]
+    # 4. End-to-End Latency Measurement strictly on Validation slice (0% contact with Test set)
+    val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
+    raw_window = val_slice.iloc[-L:]
     lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=150, warmup=15)
 
     return {

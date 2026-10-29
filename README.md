@@ -106,7 +106,7 @@ Bảng đối chuẩn 6 mô hình trên dữ liệu sạch hoàn toàn không c�
 2. **Khắc phục Quá khớp (Overfitting) vs. Dịch chuyển Phân phối Mùa mưa (Distribution Shift):**
    - **Hiện tượng Quá khớp ở LightGBM Mặc định:** Mô hình mặc định (Dòng 4) không khống chế độ sâu cây, dẫn đến việc Train RMSE giảm sâu xuống `0.5825 mm/h` (ghi nhớ nhiễu cục bộ), khiến Test RMSE tăng lên `1.2036 mm/h` và Wet Test RMSE lên `2.3136 mm/h`.
    - **Khoảng cách Train–Test & Dịch chuyển phân phối:** Chú ý rằng sai số Test RMSE của **toàn bộ 6 mô hình** đều tăng so với Validation (ví dụ: Persistence tăng từ 1.07 lên 1.57, Optuna tăng từ 0.83 lên 1.18). Điều này phản ánh sự **dịch chuyển phân phối theo mùa (seasonal distribution shift)**: Tập Test rơi vào nửa cuối năm 2025 (đỉnh mùa mưa bão với các trận dông đối lưu cực lớn), khác biệt rõ rệt so với mùa khô/chuyển mùa ở tập Validation (nửa đầu 2025).
-   - **Sự ổn định của Optuna TPE:** Nhờ tìm được cấu hình có điều chuẩn tối ưu (`learning_rate=0.0235`, `min_child_samples=10`), Optuna TPE duy trì khoảng cách khái quát hóa Train–Val rất chặt chẽ (`0.8109` vs `0.8319`, chênh lệch chỉ $0.021\text{ mm/h}$), từ đó đạt Test RMSE thấp nhất (`1.1764 mm/h`) và chỉ số cảnh báo ngập cao nhất ($F_1 = 0.5714$).
+   - **Sự ổn định của Optuna TPE:** Nhờ tìm được cấu hình có điều chuẩn tối ưu (`learning_rate=0.0412`, `min_child_samples=20`, `max_depth=12`, `100 trees`), Optuna TPE duy trì khoảng cách khái quát hóa Train–Val rất chặt chẽ (`0.7623` vs `0.8277`, chênh lệch chỉ $0.065\text{ mm/h}$), từ đó đạt Test RMSE thấp nhất (`1.1836 mm/h`), cải thiện rõ rệt ở giờ có mưa (`2.2789 mm/h`) và chỉ số cảnh báo ngập cao nhất ($F_1 = 0.5783$).
 
 ![Actual vs Predicted Test](results/figures/actual_vs_predicted_test.png)
 
@@ -170,7 +170,7 @@ pip install -r requirements.txt
    ```
 4. **Huấn luyện mô hình độc lập (Tùy chọn):**
    ```bash
-   python src/models/train.py --L 1 --n-estimators 200 --max-depth 6 --learning-rate 0.0235
+   python src/models/train.py --L 1 --n-estimators 100 --max-depth 12 --learning-rate 0.0412 --min-child-samples 20
    ```
 5. **Đánh giá Đa mô hình & Xuất biểu đồ:**
    ```bash
@@ -195,7 +195,7 @@ pip install -r requirements.txt
 2. **Nhiễu đo lường Độ trễ trên Phần cứng Dùng chung (CPU Jitter):**
    - Độ trễ đơn mẫu ở mức mili-giây chịu ảnh hưởng bởi hiện tượng điều tiết xung nhịp (thermal throttling) và chuyển ngữ cảnh CPU (context switching). Do đó, dự án sử dụng phân vị 95 ($P_{95}$) qua hàng trăm lượt đo để đảm bảo tính ổn định.
 3. **Tính thưa thớt của Lượng mưa (Zero-Inflation) & Bài toán Cảnh báo Ngập:**
-   - Dữ liệu lượng mưa theo giờ tại Tân Sơn Nhất có tới $>74\%$ số giờ không mưa ($0\text{ mm}$). Việc chỉ nhìn vào RMSE toàn cục có thể bị chi phối bởi các giờ khô hạn. Vì vậy, báo cáo đã bổ sung `Wet_Test_RMSE` ($2.2665\text{ mm/h}$) và $F_1\text{-score}$ phát hiện mưa dông ($0.5714$, Recall $75.2\%$) nhằm phục vụ trực tiếp cho mục tiêu cảnh báo ngập lụt.
+   - Dữ liệu lượng mưa theo giờ tại Tân Sơn Nhất có tới $>74\%$ số giờ không mưa ($0\text{ mm}$). Việc chỉ nhìn vào RMSE toàn cục có thể bị chi phối bởi các giờ khô hạn. Vì vậy, báo cáo đã bổ sung `Wet_Test_RMSE` ($2.2789\text{ mm/h}$) và $F_1\text{-score}$ phát hiện mưa dông ($0.5783$) nhằm phục vụ trực tiếp cho mục tiêu cảnh báo ngập lụt.
 4. **Phạm vi Trạm Đơn lẻ:**
    - Dữ liệu thu thập từ trạm Tân Sơn Nhất (`48900`) chưa phản ánh tính phân hóa không gian (spatial heterogeneity) lượng mưa trên toàn địa bàn TP.HCM.
 
