@@ -10,6 +10,7 @@ Budget: 40 trials per seed across 5 random seeds (total 200 evaluations).
 
 import argparse
 from pathlib import Path
+import math
 import random
 import sys
 import time
@@ -43,14 +44,18 @@ DEFAULT_SEEDS = [42, 123, 456, 789, 2026]
 
 
 def sample_random_configuration(seed: int) -> Dict[str, Any]:
-    """Sample a random candidate solution x = (L, theta)."""
+    """Sample a random candidate solution x = (L, theta) using identical prior distribution as Optuna."""
     rng = random.Random(seed)
+    # Log-uniform sampling for learning_rate in [0.01, 0.25] to match Optuna log=True exactly
+    log_lr = rng.uniform(math.log(0.01), math.log(0.25))
+    lr = round(math.exp(log_lr), 4)
+
     return {
         "L": rng.choice(WINDOW_CANDIDATES),
         "n_estimators": rng.choice([20, 50, 100, 150, 200, 300]),
         "max_depth": rng.choice([2, 3, 4, 6, 8, 10, 12]),
         "num_leaves": rng.choice([7, 15, 31, 63, 127]),
-        "learning_rate": round(rng.uniform(0.01, 0.25), 4),
+        "learning_rate": lr,
         "min_child_samples": rng.choice([10, 20, 50, 100]),
     }
 

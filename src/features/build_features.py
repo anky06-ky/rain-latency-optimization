@@ -16,7 +16,9 @@ BASE_NUMERIC_COLS = ["temp", "dwpt", "rhum", "pres", "wspd"]
 def load_clean_weather_data(filepath: Path = RAW_DATA_PATH) -> pd.DataFrame:
     """
     Load raw Meteostat CSV and apply Quality Gate filtering (2023-2025).
-    Applies short-gap linear interpolation for continuous sensors (<= 2h).
+    Uses strictly past-only / causal imputation to prevent future data leakage:
+    - Continuous physical variables (temp, dwpt, rhum, pres, wspd): forward-fill up to 2 hours.
+    - Precipitation: forward-fill short gaps up to 1 hour, remaining missing treated as 0.0 for feature lagging.
     """
     if not filepath.exists():
         raise FileNotFoundError(f"Raw data file not found: {filepath}. Run 'python src/data/download.py' first.")
@@ -28,11 +30,12 @@ def load_clean_weather_data(filepath: Path = RAW_DATA_PATH) -> pd.DataFrame:
     df = df[(df["time"] >= "2023-01-01") & (df["time"] <= "2025-12-31 23:59:59")].copy()
     df = df.sort_values("time").reset_index(drop=True)
 
-    # Linear interpolation for continuous weather variables (gaps <= 2h)
-    df[BASE_NUMERIC_COLS] = df[BASE_NUMERIC_COLS].interpolate(method="linear", limit=2)
+    # Strictly causal forward-fill for continuous weather variables (no future values accessed)
+    df[BASE_NUMERIC_COLS] = df[BASE_NUMERIC_COLS].ffill(limit=2)
 
-    # Clean precipitation: fill remaining missing values with 0.0 for lagging
-    df["prcp_clean"] = df["prcp"].fillna(0.0)
+    # Clean precipitation for feature lagging: past-only forward-fill (limit=1), remainder as 0.0
+    # Note: ground-truth target is derived from raw df['prcp'] before fillna, and missing targets are dropped
+    df["prcp_clean"] = df["prcp"].ffill(limit=1).fillna(0.0)
 
     return df
 
@@ -46,7 +49,7 @@ def build_features(df: pd.DataFrame, L: int = 6) -> Tuple[pd.DataFrame, List[str
         L: Historical window length in hours (L in [1, 72]).
         
     Returns:
-        df_features: DataFrame containing features, 'target' (y_t+1), and 'time'.
+        df_features: DataFrame containing features, 'target' (y_t+1), 'time', and 'target_time'.
         feature_cols: List of feature column names.
     """
     if L < 1:
@@ -57,6 +60,8 @@ def build_features(df: pd.DataFrame, L: int = 6) -> Tuple[pd.DataFrame, List[str
     # Target: 1 hour ahead precipitation (y_t+1)
     data_dict["target"] = df["prcp"].shift(-1)
     data_dict["time"] = df["time"]
+    # Explicit target timestamp to eliminate boundary leakage
+    data_dict["target_time"] = df["time"] + pd.Timedelta(hours=1)
 
     base_cols = ["temp", "dwpt", "rhum", "pres", "wspd", "prcp_clean"]
     feature_cols = []
@@ -99,8 +104,8 @@ def build_features(df: pd.DataFrame, L: int = 6) -> Tuple[pd.DataFrame, List[str
     # Combine into DataFrame
     df_feat = pd.DataFrame(data_dict)
 
-    # Drop invalid rows: first L-1 rows (due to lag) and last row (target is NaN)
-    df_feat = df_feat.dropna(subset=["target"]).iloc[L - 1:].reset_index(drop=True)
+    # Drop any row with NaN in features (lag warm-up) or NaN in target (missing ground truth)
+    df_feat = df_feat.dropna(subset=feature_cols + ["target"]).reset_index(drop=True)
 
     return df_feat, feature_cols
 
@@ -111,14 +116,14 @@ def split_time_series(df_feat: pd.DataFrame, feature_cols: List[str]) -> Tuple[
     Tuple[pd.DataFrame, pd.Series],
 ]:
     """
-    Split time series chronologically without data leakage:
-    - Train: 2023-01-01 to 2024-12-31 (17,544 hours due to 2024 leap year, ~66.7%)
-    - Validation: 2025-01-01 to 2025-06-30 (4,344 hours, ~16.5%)
-    - Test: 2025-07-01 to 2025-12-31 (4,416 hours, ~16.8%)
+    Split time series chronologically by target_time to eliminate boundary leakage:
+    - Train: target_time <= 2024-12-31 23:59:59 (features up to 22:00 predicting 23:00)
+    - Validation: 2025-01-01 00:00:00 <= target_time <= 2025-06-30 23:59:59
+    - Test: 2025-07-01 00:00:00 <= target_time <= 2025-12-31 23:59:59
     """
-    train_mask = (df_feat["time"] >= "2023-01-01") & (df_feat["time"] <= "2024-12-31 23:59:59")
-    val_mask = (df_feat["time"] >= "2025-01-01") & (df_feat["time"] <= "2025-06-30 23:59:59")
-    test_mask = (df_feat["time"] >= "2025-07-01") & (df_feat["time"] <= "2025-12-31 23:59:59")
+    train_mask = (df_feat["target_time"] >= "2023-01-01 01:00:00") & (df_feat["target_time"] <= "2024-12-31 23:59:59")
+    val_mask = (df_feat["target_time"] >= "2025-01-01 00:00:00") & (df_feat["target_time"] <= "2025-06-30 23:59:59")
+    test_mask = (df_feat["target_time"] >= "2025-07-01 00:00:00") & (df_feat["target_time"] <= "2025-12-31 23:59:59")
 
     train_df = df_feat[train_mask]
     val_df = df_feat[val_mask]
