@@ -9,241 +9,149 @@
 
 ## 1. Bối cảnh và vấn đề nghiên cứu
 
-Dự báo lượng mưa trong thời gian ngắn có ý nghĩa quan trọng đối với các hệ thống cảnh báo mưa lớn và ngập đô thị. Trong các ứng dụng thời gian thực, một mô hình dự báo không chỉ cần có sai số thấp mà còn phải đáp ứng giới hạn về thời gian xử lý trên phần cứng triển khai.
+Dự báo lượng mưa trong thời gian ngắn (short-term rainfall nowcasting) có ý nghĩa quyết định đối với các hệ thống cảnh báo sớm ngập lụt đô thị và điều hành trạm bơm tự động. Trong các kịch bản triển khai cạnh (Edge IoT) hoặc vòng quét thời gian thực liên tục qua mạng lưới trạm quan trắc, một mô hình dự báo không chỉ cần sai số thấp mà bắt buộc phải thỏa mãn nghiêm ngặt giới hạn về thời gian xử lý phần cứng.
 
-Các mô hình học máy có độ phức tạp cao có thể cải thiện độ chính xác nhưng đồng thời làm tăng thời gian trích xuất đặc trưng và suy luận. Vì vậy, việc lựa chọn mô hình chỉ dựa trên độ chính xác có thể tạo ra một cấu hình không phù hợp với yêu cầu vận hành thực tế.
+Các mô hình học máy phức tạp có thể tăng nhẹ độ chính xác nhưng lại kéo dài đáng kể thời gian trích xuất đặc trưng và suy luận cây quyết định. Việc lựa chọn mô hình chỉ dựa trên độ chính xác thuần túy sẽ dễ dẫn tới những cấu hình "quá tải phần cứng", không khả thi trong vận hành thực tế.
 
-Đề tài xem bài toán dự báo lượng mưa một giờ tiếp theo như một bài toán tối ưu hóa có ràng buộc, trong đó đồng thời lựa chọn độ dài cửa sổ dữ liệu lịch sử và các siêu tham số của mô hình LightGBM nhằm giảm sai số dự báo nhưng vẫn đảm bảo giới hạn độ trễ suy luận trên CPU.
+Đề tài tiếp cận bài toán dự báo lượng mưa một giờ tiếp theo dưới góc nhìn của **Bài toán Tối ưu hóa có Ràng buộc (Constrained Optimization)**: Đồng thời tìm kiếm độ dài cửa sổ lịch sử \(L\) và bộ siêu tham số \(\theta\) của mô hình LightGBM nhằm cực tiểu hóa sai số dự báo trên tập thẩm định trong khi bảo đảm độ trễ suy luận toàn trình không vượt quá 5.0 ms trên CPU đơn luồng.
 
-## 2. Câu hỏi nghiên cứu
+## 2. Câu hỏi nghiên cứu (Research Questions)
 
-Với dữ liệu khí tượng lịch sử theo giờ, cần lựa chọn độ dài cửa sổ lịch sử \(L\) và cấu hình siêu tham số \(\theta\) như thế nào để đạt sai số dự báo lượng mưa một giờ tới nhỏ nhất trong khi vẫn đảm bảo độ trễ suy luận end-to-end không vượt quá 5 ms trên CPU?
+Đề tài tập trung giải quyết ba câu hỏi nghiên cứu then chốt:
 
-Ngoài ra, đề tài khảo sát liệu phương pháp tối ưu hóa Bayesian sử dụng Optuna TPE có khả năng tìm được nghiệm khả thi và hội tụ đến cấu hình tốt hơn Random Search khi hai phương pháp được cung cấp cùng ngân sách đánh giá hay không.
+* **RQ1 (Hiệu quả dưới cùng ngân sách đánh giá - Fair Comparison under Equal Budget):**  
+  *Dưới cùng một ngân sách đánh giá hạn chế (\(N = 40\) trials/seed trên cùng 5 random seeds), liệu phương pháp tối ưu hóa Bayesian sử dụng Optuna TPE có tìm được cấu hình thỏa mãn ràng buộc độ trễ \(P_{95} \le 5.0\text{ ms}\) với sai số \(RMSE_{\text{val}}\) thấp hơn và tỷ lệ nghiệm khả thi (feasible rate) vượt trội so với Random Search hay không?*
+
+* **RQ2 (Mở rộng ngân sách & Tính bão hòa hội tụ - Budget Scaling & Convergence Saturation):**  
+  *40 trials đóng vai trò đối chuẩn công bằng, không phải giới hạn của dự án. Khi mở rộng ngân sách tối ưu hóa lên quy mô lớn hơn (\(N = 100\) trials/seed \(\times\) 5 seeds = 500 trials), nghiệm tối ưu của Optuna TPE có tiếp tục được cải thiện hay không? Đường cong hội tụ thể hiện điểm bão hòa (diminishing returns) tại ngưỡng ngân sách nào?*
+
+* **RQ3 (Đánh đổi Động lực học & Biên Pareto - Accuracy-Latency Trade-off):**  
+  *Khi mở rộng không gian tìm kiếm số lượng cây \(n_{\text{estimators}} \in [20, 500]\), sự đánh đổi giữa độ phức tạp mô hình, độ dài cửa sổ lịch sử \(L\) và thời gian suy luận toàn trình \(T_{e2e}\) diễn ra như thế nào trên đường biên Pareto?*
 
 ## 3. Mục tiêu nghiên cứu
 
 ### Mục tiêu tổng quát
 
-Xây dựng và đánh giá một quy trình tối ưu hóa mô hình dự báo lượng mưa ngắn hạn có xét đồng thời độ chính xác và giới hạn độ trễ suy luận.
+Xây dựng và đánh giá một quy trình tối ưu hóa mô hình dự báo lượng mưa ngắn hạn có xét đồng thời độ chính xác và giới hạn độ trễ suy luận thực tế trên CPU đơn luồng.
 
 ### Mục tiêu cụ thể
 
-1. Thu thập và tiền xử lý dữ liệu khí tượng theo giờ của trạm Tân Sơn Nhất.
+1. **Thu thập & tiền xử lý chuẩn mực:** Thu thập dữ liệu khí tượng theo giờ trạm Tân Sơn Nhất (WMO ID: 48900) giai đoạn 2023–2025; áp dụng điền khuyết nhân quả (causal forward-fill) triệt tiêu 100% rò rỉ dữ liệu (data leakage).
+2. **Xây dựng đặc trưng nhân quả:** Thiết lập không gian đặc trưng gồm trễ quan sát và thống kê trượt theo các cửa sổ \(L\), đảm bảo không sử dụng bất kỳ thông tin nào từ tương lai.
+3. **Xây dựng baseline tham chiếu:** Thiết lập 4 mô hình cơ sở gồm Persistence baseline, Linear Regression, Ridge Regression và LightGBM mặc định.
+4. **Mô hình hóa bài toán tối ưu có ràng buộc:** Định nghĩa chính xác vector biến quyết định \(x = (L, \theta)\), hàm mục tiêu \(\min RMSE_{\text{val}}\), và ràng buộc phân vị \(P_{95}(T_{e2e}) \le 5.0\text{ ms}\).
+5. **Đánh giá đối chuẩn 2 cấp độ (Two-Tier Optimization Framework):**
+   - *Cấp độ 1 (RQ1):* Đối chuẩn công bằng Random Search vs Optuna TPE tại ngân sách 40 trials/seed qua 5 seeds.
+   - *Cấp độ 2 (RQ2):* Mở rộng ngân sách Optuna TPE lên 500 trials để khảo sát động lực học hội tụ và tiệm cận đường biên Pareto tối ưu.
+6. **Khảo sát đánh đổi & khả năng tổng quát hóa:** Phân tích đường biên Pareto giữa RMSE và latency, kiểm chứng nghiệm tối ưu trên tập Test độc lập hoàn toàn.
 
-2. Xây dựng tập đặc trưng nhân quả phục vụ dự báo lượng mưa tại thời điểm \(t+1\), đảm bảo không sử dụng thông tin từ tương lai.
+## 4. Dữ liệu nghiên cứu
 
-3. Xây dựng các mô hình baseline gồm Persistence, Linear Regression, Ridge Regression và LightGBM mặc định.
-
-4. Xây dựng bài toán tối ưu hóa đồng thời độ dài cửa sổ lịch sử \(L\) và siêu tham số LightGBM.
-
-5. So sánh Random Search và Optuna TPE dưới cùng ngân sách đánh giá.
-
-6. Đánh giá sự đánh đổi giữa độ chính xác dự báo và độ trễ suy luận.
-
-7. Kiểm tra khả năng tổng quát hóa của nghiệm tối ưu trên tập Test hoàn toàn độc lập.
-
-## 4. Dữ liệu
-
-Nguồn dữ liệu chính là dữ liệu khí tượng lịch sử theo giờ từ Meteostat tại trạm Tân Sơn Nhất, mã trạm WMO 48900.
-
-Khoảng dữ liệu phục vụ mô hình hóa chính là giai đoạn 2023–2025.
-
-Các biến khí tượng được sử dụng gồm:
-
-- nhiệt độ;
-- điểm sương;
-- độ ẩm tương đối;
-- áp suất;
-- tốc độ gió;
-- lượng mưa;
-- các biến lịch sử và thống kê trượt được xây dựng từ dữ liệu quá khứ.
-
-Biến mục tiêu là lượng mưa tại một giờ tiếp theo:
-
-\[
-y_{t+1}=\text{precipitation at time }t+1.
-\]
-
-Dữ liệu được chia theo thời gian thay vì lấy mẫu ngẫu nhiên nhằm tránh rò rỉ dữ liệu.
-
-Tập Train sử dụng dữ liệu đến cuối năm 2024.
-
-Tập Validation sử dụng sáu tháng đầu năm 2025 và được dùng trong quá trình tối ưu hóa.
-
-Tập Test sử dụng sáu tháng cuối năm 2025 và chỉ được sử dụng sau khi quá trình lựa chọn cấu hình đã hoàn tất.
+* **Nguồn dữ liệu:** Chuỗi dữ liệu khí tượng theo giờ từ Meteostat tại trạm Tân Sơn Nhất (WMO ID: 48900), giai đoạn 2023–2025 gồm 26.304 mốc thời gian liên tục.
+* **Các biến khí tượng quan trắc:**
+  - Nhiệt độ không khí (`temp`, °C);
+  - Điểm sương (`dwpt`, °C);
+  - Độ ẩm tương đối (`rhum`, %);
+  - Áp suất khí quyển (`pres`, hPa);
+  - Tốc độ gió (`wspd`, km/h);
+  - Lượng mưa quan trắc (`prcp`, mm).
+* **Biến mục tiêu:** Lượng mưa tại 1 giờ tiếp theo:
+  \[
+  y_{t+1} = \text{precipitation at time } t+1.
+  \]
+* **Phân chia tập dữ liệu chặt chẽ theo dòng thời gian (Chronological Split):**
+  - **Tập Train (70%):** Dữ liệu từ 01/01/2023 đến 31/12/2024 (2 năm đầu).
+  - **Tập Validation (15%):** Sáu tháng đầu năm 2025 (01/01/2025 – 30/06/2025), dùng độc quyền để tính toán hàm mục tiêu trong quá trình tối ưu hóa.
+  - **Tập Test (15%):** Sáu tháng cuối năm 2025 (01/07/2025 – 31/12/2025), khóa kín và chỉ đánh giá một lần duy nhất sau khi đã chốt cấu hình tối ưu.
 
 ## 5. Mô hình hóa bài toán tối ưu
 
-Vector biến quyết định được xác định bởi:
+Vector biến quyết định được chuẩn hóa:
 
 \[
-x=(L,\theta)
+x = (L, \theta)
 \]
 
-trong đó \(L\) là độ dài cửa sổ lịch sử và \(\theta\) là tập siêu tham số của LightGBM.
+trong đó:
+- \(L\) là độ dài cửa sổ lịch sử quan sát:
+  \[
+  L \in \{1, 2, 3, 6, 12, 24, 36, 48, 72\} \text{ (giờ)}.
+  \]
+- \(\theta\) là tập 5 siêu tham số cấu trúc của mô hình LightGBM:
+  \[
+  \theta = (n_{\text{estimators}}, \max_{\text{depth}}, \text{num}_{\text{leaves}}, \text{learning}_{\text{rate}}, \text{min}_{\text{child\_samples}})
+  \]
+  Không gian tìm kiếm:
+  - \(n_{\text{estimators}} \in [20, 500]\) *(mở rộng lên 500 cây nhằm khảo sát giới hạn chịu tải latency)*;
+  - \(\max_{\text{depth}} \in [2, 12]\);
+  - \(\text{num}_{\text{leaves}} \in [7, 127]\);
+  - \(\text{learning}_{\text{rate}} \in [0.01, 0.25]\) *(lấy mẫu log-uniform)*;
+  - \(\text{min}_{\text{child\_samples}} \in [10, 100]\).
 
-Các giá trị cửa sổ được khảo sát:
+### Hàm mục tiêu
 
 \[
-L\in\{1,2,3,6,12,24,36,48,72\}.
+\min_{L, \theta} \quad f(L, \theta) = RMSE_{\text{validation}}(L, \theta)
 \]
 
-Một số siêu tham số chính gồm:
+### Ràng buộc độ trễ phần cứng
 
 \[
-\theta=
-(
-n_{\text{estimators}},
-max_{\text{depth}},
-num_{\text{leaves}},
-learning_{\text{rate}},
-min_{\text{child samples}}
-).
+T_{e2e}(L, \theta) = T_{\text{feature}}(L) + T_{\text{predict}}(\theta) \le 5.0\text{ ms}
 \]
 
-Hàm mục tiêu là:
+Điều kiện khả thi được kiểm định thông qua phân vị 95 của phân phối đo lường:
 
 \[
-\min_{L,\theta}
-RMSE_{\text{validation}}(L,\theta).
+P_{95}(T_{e2e}) \le 5.0\text{ ms}
 \]
 
-Với ràng buộc:
+## 6. Phương pháp tối ưu hóa & Thiết kế thực nghiệm
 
-\[
-T_{e2e}(L,\theta)\le5.0\text{ ms}.
-\]
+### 6.1. Các thuật toán tối ưu hóa
+1. **Random Search (Baseline):** Lấy mẫu ngẫu nhiên đồng đều trong không gian tìm kiếm. Sử dụng phương pháp lọc hậu nghiệm (post-hoc filtering) để loại bỏ các trial vi phạm ràng buộc \(P_{95} > 5.0\text{ ms}\).
+2. **Optuna TPE (Phương pháp đề xuất chính):** Tree-structured Parzen Estimator ứng dụng mô hình hóa Bayesian. TPE tích hợp hàm ràng buộc mềm để ước lượng phân phối xác suất nghiệm khả thi, ưu tiên khám phá các vùng không gian vừa giảm RMSE vừa chạy dưới 5.0 ms.
 
-Độ trễ end-to-end được định nghĩa:
+### 6.2. Thiết kế thực nghiệm phân tầng (Two-Tier Experimental Setup)
+* **Pha 1: Đối chuẩn công bằng (Fair Comparison Benchmark - RQ1):**
+  - Chạy 40 trials/seed trên 5 bộ random seed độc lập cho cả Random Search và Optuna TPE.
+  - So sánh trực tiếp: Best-so-far RMSE, tỷ lệ nghiệm khả thi (feasible rate %), và tốc độ hội tụ ban đầu dưới cùng ngân sách tính toán.
+* **Pha 2: Khảo sát mở rộng ngân sách (Budget Scaling Analysis - RQ2):**
+  - 40 trials chỉ là mức ngân sách đối chuẩn, không phải giới hạn của đồ án.
+  - Mở rộng ngân sách Optuna TPE lên quy mô 100 trials/seed \(\times\) 5 seeds = **500 trials**.
+  - Khảo sát sự dịch chuyển của đường biên Pareto, kiểm tra xem liệu việc tăng ngân sách có tiếp tục cải thiện sai số hay đạt điểm bão hòa, đồng thời ghi nhận nghiệm tốt nhất toàn cục (Champion Model).
 
-\[
-T_{e2e}
-=
-T_{\text{feature}}(L)
-+
-T_{\text{predict}}(\theta).
-\]
+## 7. Giao thức đo độ trễ suy luận (Latency Protocol)
 
-Giá trị \(P_{95}\) của phân phối thời gian suy luận được sử dụng thay vì thời gian trung bình nhằm hạn chế ảnh hưởng của nhiễu đo và phản ánh tốt hơn yêu cầu hệ thống thời gian thực.
+Để bảo đảm độ tin cậy và hạn chế tối đa nhiễu đo lường trên hệ điều hành:
+1. **Đo toàn trình (End-to-End):** Bao gồm thời gian trích xuất đặc trưng đơn mẫu từ cửa sổ \(L\) cộng với thời gian chạy cây quyết định trên CPU đơn luồng (`n_jobs=1`).
+2. **Khởi động CPU (Warm-up):** Thực hiện 20 lần chạy suy luận giả lập trước khi đo để nạp sẵn cache bộ nhớ và ổn định tiến trình.
+3. **Đo lường phân vị thống kê:** Đo lặp tối thiểu 200 lần bằng đồng hồ độ chính xác nanô-giây (`time.perf_counter_ns()`), xuất ra các phân vị \(P_{50}, P_{95}, P_{99}\).
 
-Một cấu hình được xem là khả thi khi:
+## 8. Chỉ số đánh giá toàn diện
 
-\[
-P_{95}(T_{e2e})\le5.0\text{ ms}.
-\]
+* **Chỉ số chất lượng dự báo:**
+  - $RMSE_{\text{val}}$, $RMSE_{\text{test}}$, $MAE_{\text{test}}$;
+  - $RMSE$ trên các giờ thực sự có mưa ($Wet\_Test\_RMSE$);
+  - Precision, Recall, $F_1$-score phát hiện sự kiện mưa ($prcp > 0.0$ mm).
+* **Chỉ số hiệu năng tối ưu & tính toán:**
+  - Phân vị độ trễ $P_{50}, P_{95}, P_{99}$ (ms);
+  - Tỷ lệ nghiệm khả thi (Feasible Rate %);
+  - Số trial cần thiết để đạt điểm hội tụ nghiệm tốt nhất;
+  - Đường cong hội tụ sai số theo số trial và biên Pareto Accuracy–Latency.
 
-## 6. Phương pháp tối ưu hóa
+## 9. Cấu trúc thực nghiệm so sánh
 
-Hai phương pháp được sử dụng.
+Hệ thống tiến hành so sánh đối chuẩn 6 cấu hình mô hình:
+1. **Persistence Baseline:** Dự báo lượng mưa giờ tới bằng đúng lượng mưa giờ hiện tại.
+2. **Linear Regression:** Mô hình hồi quy tuyến tính chuẩn.
+3. **Ridge Regression:** Hồi quy tuyến tính có điều chuẩn L2.
+4. **LightGBM Mặc định:** Cấu hình mặc định của thư viện.
+5. **LightGBM (Tối ưu bởi Random Search):** Nghiệm tốt nhất thỏa mãn ràng buộc.
+6. **LightGBM (Tối ưu bởi Optuna TPE):** Nghiệm tối ưu toàn cục đề xuất.
 
-### Random Search
+## 10. Kết quả kỳ vọng & Đóng góp của đề tài
 
-Random Search đóng vai trò baseline. Các cấu hình được lấy mẫu ngẫu nhiên trong cùng không gian tìm kiếm với phương pháp chính.
-
-### Optuna TPE
-
-Tree-structured Parzen Estimator được sử dụng như phương pháp tối ưu hóa chính. TPE sử dụng kết quả của các trial trước để ưu tiên các vùng của không gian tìm kiếm có khả năng tạo ra nghiệm tốt.
-
-Hai phương pháp được đánh giá với cùng số trial và cùng các random seed để đảm bảo tính công bằng.
-
-Thí nghiệm chính sử dụng 40 trial trên mỗi seed để so sánh trực tiếp Random Search và Optuna TPE.
-
-Một thí nghiệm mở rộng với ngân sách lớn hơn được thực hiện cho Optuna nhằm khảo sát đường cong hội tụ và đánh giá liệu việc tăng số trial có tiếp tục cải thiện nghiệm hay không.
-
-## 7. Chiến lược đo độ trễ
-
-Để giảm chi phí tính toán trong quá trình tối ưu hóa, việc đo latency được thực hiện theo hai giai đoạn.
-
-### Giai đoạn tìm kiếm
-
-Mỗi trial sử dụng một benchmark ngắn để ước lượng latency và loại các cấu hình có khả năng vi phạm giới hạn.
-
-Chi phí trích xuất đặc trưng phụ thuộc chủ yếu vào \(L\), vì vậy nó được benchmark trước cho từng giá trị cửa sổ và tái sử dụng trong quá trình tối ưu hóa.
-
-### Giai đoạn xác nhận
-
-Sau khi quá trình tìm kiếm hoàn tất, các nghiệm khả thi tốt nhất được benchmark lại với số lần lặp lớn hơn.
-
-Benchmark chính thức sử dụng warm-up trước khi đo và tối thiểu 200 lần lặp cho mỗi cấu hình.
-
-Các chỉ số latency được báo cáo gồm:
-
-\[
-P_{50},\quad P_{95},\quad P_{99}.
-\]
-
-Giá trị \(P_{95}\) được sử dụng để kiểm tra điều kiện khả thi.
-
-## 8. Chỉ số đánh giá
-
-Các chỉ số dự báo chính gồm:
-
-- Validation RMSE;
-- Test RMSE;
-- Test MAE;
-- Wet-hour RMSE;
-- Rain-event Precision;
-- Rain-event Recall;
-- Rain-event \(F_1\).
-
-Các chỉ số về hiệu năng tính toán gồm:
-
-- \(P_{50}\) latency;
-- \(P_{95}\) latency;
-- \(P_{99}\) latency;
-- tỷ lệ nghiệm khả thi;
-- số trial cần thiết để đạt best-so-far RMSE.
-
-Đường cong hội tụ và biên accuracy–latency được sử dụng để trực quan hóa hành vi của hai phương pháp tối ưu hóa.
-
-## 9. Thực nghiệm
-
-Các nhóm mô hình được so sánh gồm:
-
-1. Persistence baseline;
-2. Linear Regression;
-3. Ridge Regression;
-4. LightGBM mặc định;
-5. LightGBM tối ưu bằng Random Search;
-6. LightGBM tối ưu bằng Optuna TPE.
-
-Một phát hiện thực nghiệm quan trọng cần được kiểm chứng là mô hình LightGBM mặc định có thể vượt giới hạn latency 5 ms khi benchmark bằng quy trình đo có độ chính xác cao.
-
-Điều này minh họa rằng cấu hình có độ chính xác tốt không mặc nhiên phù hợp cho triển khai thời gian thực và tạo động lực trực tiếp cho bài toán tối ưu hóa có ràng buộc.
-
-## 10. Kết quả kỳ vọng
-
-Đề tài kỳ vọng tìm được một cấu hình LightGBM có sai số dự báo thấp đồng thời thỏa mãn giới hạn:
-
-\[
-P_{95}\le5.0\text{ ms}.
-\]
-
-Ngoài việc tìm cấu hình tốt nhất, nghiên cứu hướng tới phân tích:
-
-- ảnh hưởng của cửa sổ lịch sử đến độ chính xác và latency;
-- ảnh hưởng của độ phức tạp mô hình đến latency;
-- khả năng tìm nghiệm khả thi của Random Search và TPE;
-- tốc độ hội tụ của hai phương pháp;
-- sự đánh đổi giữa accuracy và latency.
-
-Kết quả cuối cùng không chỉ là một mô hình dự báo lượng mưa mà còn là một quy trình lựa chọn mô hình dưới giới hạn tài nguyên tính toán có thể tái lập trên phần cứng thực tế.
-
-## 11. Giới hạn nghiên cứu
-
-Dữ liệu hiện chỉ được lấy tại một trạm khí tượng nên chưa mô hình hóa được sự biến thiên không gian của lượng mưa trên toàn TP.HCM.
-
-Latency phụ thuộc vào phần cứng, hệ điều hành, phiên bản thư viện và tải của CPU tại thời điểm benchmark.
-
-Dữ liệu lượng mưa có phân phối mất cân bằng với tỷ lệ giờ không mưa lớn, do đó RMSE tổng thể chưa thể hiện đầy đủ chất lượng dự báo các sự kiện mưa lớn.
-
-Các hạn chế trên được xử lý một phần thông qua việc báo cáo metadata phần cứng, sử dụng \(P_{95}\) latency và bổ sung các chỉ số riêng cho các giờ có mưa.
-
-## 12. Đóng góp dự kiến
-
-Đóng góp chính của đề tài là xây dựng một bài toán tối ưu hóa mô hình học máy có ràng buộc hiệu năng triển khai thực tế.
-
-Thay vì lựa chọn mô hình chỉ dựa trên độ chính xác, đề tài tích hợp trực tiếp độ trễ end-to-end vào quá trình lựa chọn cấu hình.
-
-Qua đó, đề tài làm rõ sự đánh đổi giữa chất lượng dự báo và chi phí suy luận, đồng thời đánh giá khả năng của Bayesian Optimization trong việc tìm kiếm nghiệm tốt dưới một ngân sách tính toán hữu hạn.
+1. **Minh chứng về sự cần thiết của tối ưu hóa có ràng buộc:** Chứng minh mô hình LightGBM mặc định hoặc các cấu hình quá nhiều cây ($n_{\text{estimators}} > 300$) dễ bị vượt ngưỡng 5.0 ms, khẳng định việc chỉ nhìn vào độ chính xác là không đủ cho ứng dụng thời gian thực.
+2. **Vượt trội của Bayesian Optimization:** Chứng minh Optuna TPE đạt tỷ lệ nghiệm khả thi cao hơn đáng kể so với Random Search dưới cùng ngân sách (RQ1) và tiếp tục cải thiện chất lượng nghiệm khi mở rộng ngân sách lên 500 trials (RQ2).
+3. **Lời giải trọn vẹn cho bài toán thực tế:** Cung cấp cấu hình tối ưu toàn diện (độ dài cửa sổ $L$ và bộ siêu tham số $\theta$) kèm quy trình tái lập trọn vẹn từ dữ liệu thô đến triển khai suy luận.

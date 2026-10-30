@@ -462,8 +462,10 @@ html_content = f"""<!DOCTYPE html>
   <p><strong>1.2. Thách thức Ràng buộc Thời gian thực (Hardware Latency Constraint):</strong> Một mô hình dự báo dù có độ chính xác cao trên lý thuyết nhưng nếu tốn hàng trăm mili-giây hoặc hàng giây để suy luận thì không thể triển khai trên các thiết bị máy tính nhúng tại trạm quan trắc cạnh (Edge IoT) hoặc phục vụ vòng quét tự động thời gian thực hàng trăm điểm đo. Vì vậy, độ chính xác bắt buộc phải đi kèm với <strong>ràng buộc thời gian suy luận nghiêm ngặt</strong>.</p>
 
   <div class="callout-blue">
-    <strong>Câu hỏi Nghiên cứu Then chốt của Đồ án:</strong><br>
-    <em>"Với giới hạn độ trễ suy luận toàn trình không vượt quá <strong>5.0 ms</strong> trên CPU đơn lõi, nên sử dụng bao nhiêu giờ lịch sử quan trắc (<span class="m-var">L</span>) và cấu hình siêu tham số mô hình nào (<span class="m-var">&theta;</span>) để sai số dự báo lượng mưa giờ kế tiếp là nhỏ nhất?"</em>
+    <strong>Ba Câu hỏi Nghiên cứu Then chốt (Core Research Questions):</strong><br>
+    <strong>&bull; RQ1 (Hiệu quả dưới cùng ngân sách - Fair Comparison):</strong> Dưới cùng ngân sách đánh giá hạn chế (40 trials/seed trên 5 seeds), liệu Bayesian Optuna TPE có tìm được cấu hình thỏa mãn <span class="m-var">P</span><span class="m-sub">95</span> &le; 5.0 ms với RMSE tốt hơn và tỷ lệ nghiệm khả thi cao hơn Random Search?<br>
+    <strong>&bull; RQ2 (Mở rộng ngân sách & Bão hòa hội tụ - Budget Scaling):</strong> 40 trials chỉ là mức đối chuẩn công bằng; khi mở rộng ngân sách lên 500 trials (100 trials/seed &times; 5 seeds), nghiệm của Optuna TPE có tiếp tục cải thiện không và điểm bão hòa xuất hiện ở đâu?<br>
+    <strong>&bull; RQ3 (Đánh đổi Động lực học & Biên Pareto):</strong> Sự đánh đổi giữa độ phức tạp mô hình (cửa sổ <span class="m-var">L</span>, số cây <span class="m-var">n</span><span class="m-sub">estimators</span> &isin; [20, 500]) và độ trễ toàn trình diễn ra như thế nào trên đường biên Pareto?
   </div>
 
   <div class="section-header">
@@ -517,7 +519,7 @@ html_content = f"""<!DOCTYPE html>
     <li><strong>Siêu tham số mô hình (<span class="m-var">&theta;</span>):</strong> Gồm 5 siêu tham số then chốt của LightGBM:
       <ul>
         <li><code>max_depth</code> &isin; [2, 12] (Độ sâu tối đa của cây quyết định)</li>
-        <li><code>n_estimators</code> &isin; [20, 300] (Số lượng cây tăng cường)</li>
+        <li><code>n_estimators</code> &isin; [20, 500] (Số lượng cây tăng cường; mở rộng lên 500 để khảo sát giới hạn latency)</li>
         <li><code>num_leaves</code> &isin; [7, 127] (Số lượng lá trên cây)</li>
         <li><code>learning_rate</code> &isin; [0.01, 0.25] (Tốc độ học, lấy mẫu phân phối log-uniform)</li>
         <li><code>min_child_samples</code> &isin; [10, 100] (Số mẫu tối thiểu trên mỗi lá để chống quá khớp)</li>
@@ -609,13 +611,13 @@ html_content = f"""<!DOCTYPE html>
         <td><strong>Random Search</strong> (Baseline)</td>
         <td>Lấy mẫu ngẫu nhiên đồng đều trong không gian tìm kiếm &Omega; (log-uniform cho <code>learning_rate</code>)</td>
         <td>Lọc hậu nghiệm (Post-hoc filtering): Chỉ loại bỏ nghiệm vi phạm sau khi tìm kiếm</td>
-        <td>100 trials/seed &times; 5 random seeds = <strong>500 trials</strong></td>
+        <td>Pha 1 (RQ1): 40 trials/seed<br>Pha 2 (RQ2): 100 trials &times; 5 seeds = <strong>500 trials</strong></td>
       </tr>
       <tr class="highlight-row">
         <td><strong>Optuna (TPE)</strong> (Đề xuất chính)</td>
         <td>Tree-structured Parzen Estimator (Tối ưu hóa Bayes - Bayesian Optimization)</td>
         <td>Lấy mẫu có điều kiện thông qua hàm ràng buộc: <span class="m-var">P</span><span class="m-sub">95</span> &minus; 5.0 &le; 0</td>
-        <td>100 trials/seed &times; 5 random seeds = <strong>500 trials</strong></td>
+        <td>Pha 1 (RQ1): 40 trials/seed<br>Pha 2 (RQ2): 100 trials &times; 5 seeds = <strong>500 trials</strong></td>
       </tr>
     </tbody>
   </table>
