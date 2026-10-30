@@ -38,7 +38,7 @@ splits:
 search_space:
   L_candidates: [1, 2, 3, 6, 12, 24, 36, 48, 72]
   hyperparameters:
-    n_estimators: [20, 300]
+    n_estimators: [20, 500]
     max_depth: [2, 12]
     num_leaves: [7, 127]
     learning_rate:
@@ -48,7 +48,8 @@ search_space:
     min_child_samples: [10, 100]
 
 budget:
-  trials_per_seed: 100
+  fair_comparison_trials_per_seed: 40  # RQ1: Direct apples-to-apples comparison under equal low budget
+  scaling_trials_per_seed: 100         # RQ2: Convergence and saturation study
   seeds: [42, 123, 456, 789, 2026]
   total_evaluations: 500
 

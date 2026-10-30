@@ -1,7 +1,7 @@
 Model,L,Cấu hình,Train_RMSE,Val_RMSE,Test_RMSE,Test_MAE,Wet_Test_RMSE,Rain_Event_F1,Latency_P95,Feasible
 1. Persistence (Ngây thơ),1,y(t+1) = prcp(t),1.1615,1.0699,1.5674,0.4543,3.042,0.557,0.05,True
-2. Linear Regression,6,Default OLS,0.9128,0.8468,1.2203,0.4712,2.3411,0.5112,2.748,True
-3. Ridge Regression,6,alpha=1.0,0.9128,0.8467,1.2203,0.4713,2.3411,0.5112,3.367,True
-4. LightGBM (Mặc định),6,"100 trees, depth=-1",0.5825,0.8499,1.2036,0.4021,2.3136,0.5617,5.063,False
-5. Random Search Best,6,"200 trees, depth=12, lr=0.0171",0.7667,0.829,1.1891,0.3993,2.2937,0.5778,4.674,True
-6. Optuna TPE (Đề tài tối ưu),1,"150 trees, depth=12, lr=0.0215",0.8243,0.8318,1.1774,0.3998,2.2735,0.5882,3.999,True
+2. Linear Regression,6,Default OLS,0.9128,0.8468,1.2203,0.4712,2.3411,0.5112,3.628,True
+3. Ridge Regression,6,alpha=1.0,0.9128,0.8467,1.2203,0.4713,2.3411,0.5112,3.647,True
+4. LightGBM (Mặc định),6,"100 trees, depth=-1",0.5825,0.8499,1.2036,0.4021,2.3136,0.5617,5.604,False
+5. Random Search Best,6,"200 trees, depth=12, lr=0.0171",0.7667,0.829,1.1891,0.3993,2.2937,0.5778,4.939,True
+6. Optuna TPE (Đề tài tối ưu),1,"150 trees, depth=12, lr=0.0215",0.8243,0.8318,1.1774,0.3998,2.2735,0.5882,4.547,True

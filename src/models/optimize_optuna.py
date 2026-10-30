@@ -55,7 +55,7 @@ def run_optuna_study(
     def objective(trial: optuna.Trial) -> float:
         # 1. Suggest decision variables
         L = trial.suggest_categorical("L", WINDOW_CANDIDATES)
-        n_estimators = trial.suggest_categorical("n_estimators", [20, 50, 100, 150, 200, 300])
+        n_estimators = trial.suggest_categorical("n_estimators", [20, 50, 100, 150, 200, 300, 400, 500])
         max_depth = trial.suggest_categorical("max_depth", [2, 3, 4, 6, 8, 10, 12])
         num_leaves = trial.suggest_categorical("num_leaves", [7, 15, 31, 63, 127])
         learning_rate = trial.suggest_float("learning_rate", 0.01, 0.25, log=True)
@@ -161,8 +161,8 @@ def run_optuna_search(n_trials: int = 40, seeds: List[int] = DEFAULT_SEEDS) -> p
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Constrained Optuna TPE Optimization.")
-    parser.add_argument("--trials", type=int, default=40, help="Number of trials per seed (default: 40)")
+    parser = argparse.ArgumentParser(description="Run Constrained Optuna TPE Optimization (RQ1 & RQ2).")
+    parser.add_argument("--trials", type=int, default=100, help="Number of trials per seed (default: 100 for 500 scaling trials; set 40 for RQ1 fair comparison)")
     parser.add_argument("--seeds", type=int, nargs="+", default=DEFAULT_SEEDS, help="Random seeds (default: 5 seeds)")
     args = parser.parse_args()
 

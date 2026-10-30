@@ -36,7 +36,7 @@
     "train_test_gap": 0.3531
   },
   "latency_compliance": {
-    "test_p95_latency_ms": 3.999,
+    "test_p95_latency_ms": 4.547,
     "constraint_threshold_ms": 5.0,
     "constraint_satisfied": true
   },

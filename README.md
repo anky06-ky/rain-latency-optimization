@@ -16,8 +16,10 @@
 
 Urban flooding triggered by short-duration, high-intensity rainfall is an acute operational challenge in metropolitan areas such as Ho Chi Minh City. Early flood alert systems require reliable next-hour precipitation forecasts. However, for real-time edge or server deployment, forecast accuracy cannot come at the expense of computational burden.
 
-**Core Research Question:**  
-Given historical hourly weather observations, what historical window length $L$ and model configuration $\theta$ yield the lowest forecasting error while strictly satisfying an **end-to-end inference latency constraint $T_{\text{e2e}} \le 5.0\text{ ms}$** on CPU?
+**Research Questions:**  
+* **RQ1 (Fair Comparison under Equal Budget):** Under an identical evaluation budget ($N = 40$ trials/seed across 5 random seeds), does Bayesian Optimization via Optuna TPE discover feasible configurations ($P_{95} \le 5.0\text{ ms}$) with lower validation RMSE and significantly higher feasible rate than Random Search?
+* **RQ2 (Budget Scaling & Saturation):** As the evaluation budget scales up to $N = 100$ trials/seed $\times$ 5 seeds = 500 trials, does the optimal solution continue to improve, and where does convergence saturation occur?
+* **RQ3 (Accuracy-Latency Trade-off):** Across an expanded model capacity space ($n_{\text{estimators}} \in [20, 500]$) and historical windows $L$, how does the Pareto frontier characterize the trade-off between forecast precision and execution latency?
 
 * **Target Variable:** Total precipitation 1 hour ahead ($y_{t+1}$ in mm) at Tan Son Nhat Station (WMO ID: `48900`).
 * **Raw Data Source:** Meteostat hourly historical weather data for Station 48900 (downloaded 2021–2026 into `data/raw/weather_meteostat_2021_2026.csv`).
@@ -40,7 +42,7 @@ $$\begin{aligned}
 1. **Historical Window Length ($L$):** Number of past hours utilized to compute lag features and rolling statistics ($L \in [1, 72]$).
 2. **Model Hyperparameters ($\theta$):**
    * Tree depth (`max_depth` $\in [2, 12]$)
-   * Number of boosting iterations (`n_estimators` $\in [20, 300]$)
+   * Number of boosting iterations (`n_estimators` $\in [20, 500]$ — expanded to 500 trees to investigate hardware latency limits)
    * Number of leaves (`num_leaves` $\in [7, 127]$)
    * Learning rate (`learning_rate` $\in [0.01, 0.25]$, sampled with log-uniform prior)
    * Minimum child samples (`min_child_samples` $\in [10, 100]$)
@@ -52,8 +54,9 @@ $$T_{\text{e2e}} = T_{\text{feature\_transform}}(L) + T_{\text{predict}}(\theta)
 * **Measurement:** 200–400 repetitions using high-precision `time.perf_counter_ns()`; reported as the 95th percentile ($P_{95}$) latency on CPU with `n_jobs=1`.
 * Feasibility condition: $P_{95} \le 5.0\text{ ms}$.
 
-### Decision Rule & Experimental Budget
-* **Budget:** **100 trials per method**, repeated across **5 random seeds** (`42, 123, 456, 789, 2026`) — total 500 trial evaluations per method (1,000 total evaluations).
+### Two-Tier Experimental Budget Protocol
+* **Phase 1: Equal-Budget Comparison (RQ1):** Benchmark Random Search vs Optuna TPE at **40 trials per seed** across 5 random seeds (`42, 123, 456, 789, 2026`) — total 200 evaluations per method. Optuna achieves **59.0% feasible rate** vs **39.0%** for Random Search (+20.0% advantage).
+* **Phase 2: Budget Scaling & Convergence Analysis (RQ2):** Scale budget up to **100 trials per seed $\times$ 5 seeds = 500 trials** per method (1,000 total evaluations). Optuna stabilizes convergence variance by 75% (std drops from 0.0029 to 0.0007) and reaches the champion configuration.
 * **Fair Prior Sampling:** Both Random Search and Optuna TPE sample `learning_rate` from the identical log-uniform prior $\log(\text{lr}) \sim \mathcal{U}(\ln 0.01, \ln 0.25)$.
 * **Selection Rule:** Select the candidate configuration with the lowest validation RMSE among all feasible configurations ($T_{\text{e2e}} \le 5.0\text{ ms}$).
 * **Test Evaluation:** Evaluated on the held-out Test set at the final step to benchmark candidate models without test data snooping.
