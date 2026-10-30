@@ -38,8 +38,11 @@ data/interim/*
 # Model artifacts and binaries
 models/*
 !models/.gitkeep
+!models/best_optuna_lgb.joblib
+!models/best_optuna_lgb.json
 *.pkl
 *.joblib
+!models/best_optuna_lgb.joblib
 *.pt
 *.pth
 *.onnx
