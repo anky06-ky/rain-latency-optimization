@@ -164,21 +164,29 @@ pip install -r requirements.txt
    ```bash
    python src/data/download.py
    ```
-2. **Chạy Baseline (Random Search - 40 trials x 5 seeds = 200 trials):**
+2. **Chạy Baseline (Random Search - 100 trials x 5 seeds = 500 trials):**
    ```bash
    python src/models/optimize_random.py --trials 100
    ```
-3. **Chạy Phương pháp chính (Optuna TPE - 40 trials x 5 seeds = 200 trials):**
+3. **Chạy Phương pháp chính (Optuna TPE - 100 trials x 5 seeds = 500 trials):**
    ```bash
    python src/models/optimize_optuna.py --trials 100
    ```
-4. **Huấn luyện mô hình độc lập (Tùy chọn):**
+4. **Huấn luyện mô hình độc lập & lưu artifact:**
    ```bash
    python src/models/train.py --L 1 --n-estimators 150 --max-depth 12 --learning-rate 0.0215 --min-child-samples 20
    ```
-5. **Đánh giá Đa mô hình & Xuất biểu đồ:**
+5. **Chạy Demo suy luận thời gian thực & cảnh báo ngập:**
+   ```bash
+   python src/demo_predict.py
+   ```
+6. **Đánh giá Đa mô hình & Xuất toàn bộ biểu đồ:**
    ```bash
    python src/evaluation/evaluate_final.py
+   ```
+7. **Kiểm thử tự động Pipeline (Unit Tests):**
+   ```bash
+   python -m pytest -v tests/
    ```
 
 ---

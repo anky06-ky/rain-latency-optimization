@@ -1,0 +1,44 @@
+{
+  "model_type": "LightGBMRegressor",
+  "L_hours": 1,
+  "feature_names": [
+    "temp_lag_0",
+    "dwpt_lag_0",
+    "rhum_lag_0",
+    "pres_lag_0",
+    "wspd_lag_0",
+    "prcp_lag_0",
+    "sin_hour",
+    "cos_hour",
+    "sin_month",
+    "cos_month"
+  ],
+  "n_features": 10,
+  "hyperparameters": {
+    "n_estimators": 150,
+    "max_depth": 12,
+    "num_leaves": 15,
+    "learning_rate": 0.0215,
+    "min_child_samples": 20,
+    "seed": 42
+  },
+  "metrics": {
+    "Train (2023-2024)": {
+      "rmse": 0.8243,
+      "mae": 0.2615,
+      "r2": 0.3255
+    },
+    "Validation (2025-H1)": {
+      "rmse": 0.8318,
+      "mae": 0.2289,
+      "r2": 0.1995
+    },
+    "Test (2025-H2)": {
+      "rmse": 1.1774,
+      "mae": 0.3998,
+      "r2": 0.2109
+    }
+  },
+  "latency_p95_ms": 8.556,
+  "is_feasible": false
+}
