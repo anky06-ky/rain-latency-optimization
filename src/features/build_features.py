@@ -61,7 +61,7 @@ def build_features(df: pd.DataFrame, L: int = 6) -> Tuple[pd.DataFrame, List[str
     data_dict["target"] = df["prcp"].shift(-1)
     data_dict["time"] = df["time"]
     # Explicit target timestamp to eliminate boundary leakage
-    data_dict["target_time"] = df["time"] + pd.Timedelta(hours=1)
+    data_dict["target_time"] = df["time"] + pd.to_timedelta(1, unit="h")
 
     base_cols = ["temp", "dwpt", "rhum", "pres", "wspd", "prcp_clean"]
     feature_cols = []

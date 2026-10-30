@@ -24,11 +24,13 @@ from src.features.build_features import (
 from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS
 
 
+@pytest.fixture(scope="session")
+def clean_data():
+    """Fixture providing clean weather observations (2023-2025)."""
+    return load_clean_weather_data()
+
+
 class TestPipeline:
-    @pytest.fixture(scope="session")
-    def clean_data(self):
-        """Fixture providing clean weather observations (2023-2025)."""
-        return load_clean_weather_data()
 
     def test_data_quality_and_causal_imputation(self, clean_data):
         """Verify data span (2023-2025) and ensure zero missing values in required continuous variables."""
@@ -84,6 +86,9 @@ class TestPipeline:
         sample_window = clean_data.iloc[-1:].copy()
         feat_vector = extract_single_sample_features(sample_window, L=1)
 
-        prediction = model.predict(feat_vector)
+        fcols = getattr(model, "feature_name_", [f"f_{i}" for i in range(10)])
+        feat_df = pd.DataFrame(feat_vector, columns=fcols)
+
+        prediction = model.predict(feat_df)
         assert len(prediction) == 1, "Expected single prediction"
         assert prediction[0] >= -0.5, "Prediction is unreasonably negative"
