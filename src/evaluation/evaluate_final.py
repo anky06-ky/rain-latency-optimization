@@ -312,6 +312,9 @@ def run_multi_model_benchmark(
         "Feasible": True,
     })
 
+    # Sliced strictly from Validation set to prevent any data snooping into Test period
+    val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
+
     # 2. Linear Regression (L=6)
     df_feat_6, fcols_6 = build_features(clean_df, L=6)
     (X_tr_6, y_tr_6), (X_v_6, y_v_6), (X_te_6, y_te_6) = split_time_series(df_feat_6, fcols_6)
@@ -320,7 +323,7 @@ def run_multi_model_benchmark(
     tr_m2 = compute_split_metrics(y_tr_6, lr.predict(X_tr_6))
     val_m2 = compute_split_metrics(y_v_6, lr.predict(X_v_6))
     te_m2 = compute_split_metrics(y_te_6, lr.predict(X_te_6))
-    lat_lr = benchmark_end_to_end_latency(lr, clean_df.iloc[-6:], L=6, n_runs=200, warmup=15)
+    lat_lr = benchmark_end_to_end_latency(lr, val_slice.iloc[-6:], L=6, n_runs=200, warmup=20)
     benchmark_rows.append({
         "Model": "2. Linear Regression",
         "L": 6,
@@ -341,7 +344,7 @@ def run_multi_model_benchmark(
     tr_m3 = compute_split_metrics(y_tr_6, ridge.predict(X_tr_6))
     val_m3 = compute_split_metrics(y_v_6, ridge.predict(X_v_6))
     te_m3 = compute_split_metrics(y_te_6, ridge.predict(X_te_6))
-    lat_ridge = benchmark_end_to_end_latency(ridge, clean_df.iloc[-6:], L=6, n_runs=200, warmup=15)
+    lat_ridge = benchmark_end_to_end_latency(ridge, val_slice.iloc[-6:], L=6, n_runs=200, warmup=20)
     benchmark_rows.append({
         "Model": "3. Ridge Regression",
         "L": 6,
@@ -362,7 +365,7 @@ def run_multi_model_benchmark(
     tr_m4 = compute_split_metrics(y_tr_6, lgb_def.predict(X_tr_6))
     val_m4 = compute_split_metrics(y_v_6, lgb_def.predict(X_v_6))
     te_m4 = compute_split_metrics(y_te_6, lgb_def.predict(X_te_6))
-    lat_def = benchmark_end_to_end_latency(lgb_def, clean_df.iloc[-6:], L=6, n_runs=200, warmup=15)
+    lat_def = benchmark_end_to_end_latency(lgb_def, val_slice.iloc[-6:], L=6, n_runs=200, warmup=20)
     benchmark_rows.append({
         "Model": "4. LightGBM (Mặc định)",
         "L": 6,
@@ -395,7 +398,7 @@ def run_multi_model_benchmark(
     tr_m5 = compute_split_metrics(y_tr_r, lgb_rnd.predict(X_tr_r))
     val_m5 = compute_split_metrics(y_v_r, lgb_rnd.predict(X_v_r))
     te_m5 = compute_split_metrics(y_te_r, lgb_rnd.predict(X_te_r))
-    lat_rnd = benchmark_end_to_end_latency(lgb_rnd, clean_df.iloc[-rnd_L:], L=rnd_L, n_runs=200, warmup=15)
+    lat_rnd = benchmark_end_to_end_latency(lgb_rnd, val_slice.iloc[-rnd_L:], L=rnd_L, n_runs=200, warmup=20)
     benchmark_rows.append({
         "Model": "5. Random Search Best",
         "L": rnd_L,
@@ -428,7 +431,7 @@ def run_multi_model_benchmark(
     tr_m6 = compute_split_metrics(y_tr_o, lgb_opt.predict(X_tr_o))
     val_m6 = compute_split_metrics(y_v_o, lgb_opt.predict(X_v_o))
     te_m6 = compute_split_metrics(y_te_o, lgb_opt.predict(X_te_o))
-    lat_opt = benchmark_end_to_end_latency(lgb_opt, clean_df.iloc[-best_L:], L=best_L, n_runs=400, warmup=25)
+    lat_opt = benchmark_end_to_end_latency(lgb_opt, val_slice.iloc[-best_L:], L=best_L, n_runs=200, warmup=20)
     benchmark_rows.append({
         "Model": "6. Optuna TPE (Đề tài tối ưu)",
         "L": best_L,
