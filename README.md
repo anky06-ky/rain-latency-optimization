@@ -192,6 +192,11 @@ pip install -r requirements.txt
    ```bash
    python -m pytest -v tests/
    ```
+8. **Khởi chạy Web Dashboard Tương tác Trực quan (Interactive UI):**
+   ```bash
+   python src/server.py
+   # Mở trình duyệt tại: http://127.0.0.1:8000
+   ```
 
 ---
 
