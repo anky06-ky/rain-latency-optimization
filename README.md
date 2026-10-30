@@ -1,5 +1,6 @@
 # Rainfall Forecasting under Inference Latency Constraint
 
+[![CI Pipeline](https://github.com/anky06-ky/rain-latency-optimization/actions/workflows/ci.yml/badge.svg)](https://github.com/anky06-ky/rain-latency-optimization/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Code License: MIT](https://img.shields.io/badge/Code%20License-MIT-green.svg)](LICENSE)
 [![Data License: CC BY-NC 4.0](https://img.shields.io/badge/Data%20License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
