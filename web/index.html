@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tối Ưu Hóa Dự Báo Lượng Mưa & Độ Trễ Suy Luận | Trạm Tân Sơn Nhất</title>
+  <meta name="description" content="Dashboard tương tác thời gian thực dự báo lượng mưa một giờ tới dưới ràng buộc độ trễ phần cứng CPU P95 <= 5.0ms tại trạm Tân Sơn Nhất (WMO ID: 48900).">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Background Glow Accents -->
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <!-- Header & Navigation -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"></path>
+            <line x1="8" y1="16" x2="8.01" y2="16"></line>
+            <line x1="8" y1="20" x2="8.01" y2="20"></line>
+            <line x1="12" y1="18" x2="12.01" y2="18"></line>
+            <line x1="12" y1="22" x2="12.01" y2="22"></line>
+            <line x1="16" y1="16" x2="16.01" y2="16"></line>
+            <line x1="16" y1="20" x2="16.01" y2="20"></line>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">Dự Báo Lượng Mưa & Kiểm Toán Độ Trễ Suy Luận</h1>
+          <p class="brand-subtitle">Trạm Khí tượng Tân Sơn Nhất (WMO ID: 48900) &bull; Học phần: Nhập môn Tối ưu hóa</p>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <div class="status-pill status-live">
+          <span class="pulse-dot"></span>
+          <span>Hệ Thống Trực Tuyến</span>
+        </div>
+        <div class="status-pill status-constraint">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>Ràng Buộc: P₉₅ &le; 5.0 ms</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="main-container">
+    
+    <!-- Scenario Presets Bar -->
+    <section class="presets-section">
+      <span class="presets-label">Kịch Bản Khí Tượng Mẫu:</span>
+      <div class="presets-grid">
+        <button type="button" class="preset-btn active" id="preset-normal" onclick="applyPreset('normal')">
+          <span class="preset-icon">☀️</span>
+          <span class="preset-name">Trưa Nắng Gắt (Mùa Khô)</span>
+        </button>
+        <button type="button" class="preset-btn" id="preset-storm" onclick="applyPreset('storm')">
+          <span class="preset-icon">⛈️</span>
+          <span class="preset-name">Chiều Dông Nhiệt Đới (Mưa To)</span>
+        </button>
+        <button type="button" class="preset-btn" id="preset-monsoon" onclick="applyPreset('monsoon')">
+          <span class="preset-icon">🌀</span>
+          <span class="preset-name">Bão Gió Mùa Tây Nam</span>
+        </button>
+        <button type="button" class="preset-btn" id="preset-cool" onclick="applyPreset('cool')">
+          <span class="preset-icon">🌫️</span>
+          <span class="preset-name">Đêm Dịu Mát (Mát Mẻ)</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Two-Column Interactive Grid -->
+    <div class="dashboard-grid">
+      
+      <!-- Left Column: Weather Control Panel -->
+      <section class="card panel-controls">
+        <div class="card-header">
+          <div class="header-title-group">
+            <span class="header-badge">Đầu Vào Thời Gian Thực (t)</span>
+            <h2 class="card-title">Tham Số Quan Trắc Khí Tượng</h2>
+          </div>
+          <button type="button" class="btn-reset" id="btn-reset-sliders" onclick="resetDefaults()">Đặt Lại Mặc Định</button>
+        </div>
+
+        <form id="weather-form" class="controls-form" onsubmit="return false;">
+          <!-- Temperature Slider -->
+          <div class="control-group">
+            <div class="control-header">
+              <label for="slider-temp">Nhiệt độ không khí (temp)</label>
+              <span class="val-badge" id="val-temp">34.0 °C</span>
+            </div>
+            <input type="range" id="slider-temp" min="18.0" max="42.0" step="0.5" value="34.0" oninput="updateParam('temp', this.value, '°C')">
+            <div class="range-labels">
+              <span>18°C (Se lạnh)</span>
+              <span>30°C</span>
+              <span>42°C (Nắng gay gắt)</span>
+            </div>
+          </div>
+
+          <!-- Relative Humidity Slider -->
+          <div class="control-group">
+            <div class="control-header">
+              <label for="slider-rhum">Độ ẩm tương đối (rhum)</label>
+              <span class="val-badge" id="val-rhum">53 %</span>
+            </div>
+            <input type="range" id="slider-rhum" min="20" max="100" step="1" value="53" oninput="updateParam('rhum', this.value, '%')">
+            <div class="range-labels">
+              <span>20% (Khô hanh)</span>
+              <span>60%</span>
+              <span>100% (Bão hòa hơi ẩm)</span>
+            </div>
+          </div>
+
+          <!-- Dew Point Slider -->
+          <div class="control-group">
+            <div class="control-header">
+              <label for="slider-dwpt">Điểm sương (dwpt)</label>
+              <span class="val-badge" id="val-dwpt">23.1 °C</span>
+            </div>
+            <input type="range" id="slider-dwpt" min="10.0" max="32.0" step="0.5" value="23.1" oninput="updateParam('dwpt', this.value, '°C')">
+            <div class="range-labels">
+              <span>10°C</span>
+              <span>22°C</span>
+              <span>32°C (Khí áp ẩm rất cao)</span>
+            </div>
+          </div>
+
+          <!-- Atmospheric Pressure Slider -->
+          <div class="control-group">
+            <div class="control-header">
+              <label for="slider-pres">Áp suất khí quyển (pres)</label>
+              <span class="val-badge" id="val-pres">1005.0 hPa</span>
+            </div>
+            <input type="range" id="slider-pres" min="985.0" max="1025.0" step="0.5" value="1005.0" oninput="updateParam('pres', this.value, 'hPa')">
+            <div class="range-labels">
+              <span>985 hPa (Áp thấp nhiệt đới)</span>
+              <span>1010 hPa</span>
+              <span>1025 hPa (Khí áp cao)</span>
+            </div>
+          </div>
+
+          <!-- Wind Speed Slider -->
+          <div class="control-group">
+            <div class="control-header">
+              <label for="slider-wspd">Tốc độ gió bề mặt (wspd)</label>
+              <span class="val-badge" id="val-wspd">7.0 km/h</span>
+            </div>
+            <input type="range" id="slider-wspd" min="0.0" max="60.0" step="1.0" value="7.0" oninput="updateParam('wspd', this.value, 'km/h')">
+            <div class="range-labels">
+              <span>0 km/h (Gió lặng)</span>
+              <span>20 km/h</span>
+              <span>60 km/h (Gió giật mạnh)</span>
+            </div>
+          </div>
+
+          <!-- Previous Rain Slider -->
+          <div class="control-group">
+            <div class="control-header">
+              <label for="slider-prcp">Lượng mưa giờ hiện tại (prcp lag 0)</label>
+              <span class="val-badge" id="val-prcp">0.0 mm/h</span>
+            </div>
+            <input type="range" id="slider-prcp" min="0.0" max="40.0" step="0.5" value="0.0" oninput="updateParam('prcp', this.value, 'mm/h')">
+            <div class="range-labels">
+              <span>0.0 mm (Tạnh ráo)</span>
+              <span>15.0 mm</span>
+              <span>40.0 mm (Mưa tầm tã)</span>
+            </div>
+          </div>
+
+          <!-- Time Horizon Selectors -->
+          <div class="control-row">
+            <div class="control-group control-half">
+              <label for="select-hour">Thời điểm trong ngày</label>
+              <select id="select-hour" onchange="updateTime()">
+                <option value="6">06:00 (Sáng sớm)</option>
+                <option value="9">09:00 (Buổi sáng)</option>
+                <option value="12">12:00 (Buổi trưa)</option>
+                <option value="14" selected>14:00 (Đầu giờ chiều)</option>
+                <option value="16">16:00 (Chiều dông)</option>
+                <option value="18">18:00 (Hoàng hôn)</option>
+                <option value="21">21:00 (Buổi tối)</option>
+                <option value="0">00:00 (Nửa đêm)</option>
+              </select>
+            </div>
+            <div class="control-group control-half">
+              <label for="select-month">Thời điểm trong năm</label>
+              <select id="select-month" onchange="updateTime()">
+                <option value="2">Tháng 2 (Mùa khô)</option>
+                <option value="5">Tháng 5 (Giao mùa)</option>
+                <option value="7">Tháng 7 (Mùa mưa cao điểm)</option>
+                <option value="10" selected>Tháng 10 (Triều cường & Mưa lớn)</option>
+                <option value="12">Tháng 12 (Cuối năm)</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- Right Column: Prediction & Hardware Instruments -->
+      <div class="panel-instruments">
+        
+        <!-- Live Prediction Card -->
+        <section class="card card-prediction" id="prediction-card">
+          <div class="card-header">
+            <span class="header-badge badge-cyan">Mô Hình Vô Địch (Optuna TPE)</span>
+            <span class="model-meta-tag">L=1h &bull; 150 Cây &bull; Depth=12</span>
+          </div>
+
+          <div class="prediction-body">
+            <div class="rain-readout-group">
+              <span class="readout-label">DỰ BÁO LƯỢNG MƯA GIỜ KẾ TIẾP (ŷₜ₊₁)</span>
+              <div class="readout-value-box">
+                <span class="readout-number" id="pred-rain-val">0.67</span>
+                <span class="readout-unit">mm/h</span>
+              </div>
+            </div>
+
+            <!-- Dynamic Flood Alert Banner -->
+            <div class="alert-banner alert-yellow" id="alert-banner">
+              <div class="alert-icon" id="alert-icon">🟡</div>
+              <div class="alert-content">
+                <h3 class="alert-title" id="alert-title">CẢNH BÁO VÀNG: Có Mưa Dông</h3>
+                <p class="alert-desc" id="alert-desc">Lượng mưa từ 0.5 - 2.9 mm/h. Khả năng phát triển mây đối lưu nhiệt đới cục bộ. Đề xuất sẵn sàng vận hành máy bơm.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Hardware Latency Gauge Card -->
+        <section class="card card-latency">
+          <div class="card-header">
+            <div class="header-title-group">
+              <span class="header-badge badge-green">Kiểm Toán Phần Cứng (CPU Đơn Luồng)</span>
+              <h2 class="card-title">Độ Trễ Suy Luận Toàn Trình (T_e2e)</h2>
+            </div>
+            <div class="feasibility-badge feasible" id="feasibility-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>THỎA MÃN (&le; 5.0 ms)</span>
+            </div>
+          </div>
+
+          <div class="gauge-grid">
+            <!-- Circular Gauge Visual -->
+            <div class="gauge-container">
+              <svg class="gauge-svg" viewBox="0 0 160 160">
+                <circle class="gauge-track" cx="80" cy="80" r="65"></circle>
+                <circle class="gauge-fill" id="gauge-circle" cx="80" cy="80" r="65" stroke-dasharray="408.4" stroke-dashoffset="245"></circle>
+              </svg>
+              <div class="gauge-content">
+                <span class="gauge-ms-num" id="gauge-ms">2.09</span>
+                <span class="gauge-ms-unit">mili-giây</span>
+                <span class="gauge-budget-tag" id="gauge-budget-tag">41.8% Ngân Sách</span>
+              </div>
+            </div>
+
+            <!-- Latency Breakdown bars -->
+            <div class="latency-breakdown">
+              <div class="breakdown-item">
+                <div class="breakdown-info">
+                  <span class="breakdown-name">1. Trích xuất đặc trưng (T_feature)</span>
+                  <span class="breakdown-val" id="lat-feature-val">0.587 ms</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill fill-blue" id="bar-feature" style="width: 11.7%;"></div>
+                </div>
+              </div>
+
+              <div class="breakdown-item">
+                <div class="breakdown-info">
+                  <span class="breakdown-name">2. Dự báo cây LightGBM (T_predict)</span>
+                  <span class="breakdown-val" id="lat-predict-val">1.508 ms</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill fill-cyan" id="bar-predict" style="width: 30.1%;"></div>
+                </div>
+              </div>
+
+              <div class="breakdown-item">
+                <div class="breakdown-info">
+                  <span class="breakdown-name">3. Ràng buộc tối đa cho phép</span>
+                  <span class="breakdown-val text-muted">5.000 ms</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill fill-limit" style="width: 100%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Live 200-Run Benchmark Card -->
+        <section class="card card-benchmark">
+          <div class="benchmark-header">
+            <div>
+              <h3 class="benchmark-title">Kiểm Thử Thống Kê Trực Tiếp (Live Benchmark)</h3>
+              <p class="benchmark-desc">Chạy lặp 200 lần đo với 20 warmup cycles trực tiếp trên phần cứng máy này.</p>
+            </div>
+            <button type="button" class="btn-primary" id="btn-run-benchmark" onclick="runBenchmark()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>Chạy 200 Lần Đo</span>
+            </button>
+          </div>
+
+          <div class="benchmark-metrics-grid" id="benchmark-results">
+            <div class="b-metric-box">
+              <span class="b-metric-label">Phân vị P₅₀</span>
+              <span class="b-metric-val" id="b-p50">1.82 ms</span>
+            </div>
+            <div class="b-metric-box highlight">
+              <span class="b-metric-label">Phân vị P₉₅ (Kiểm định)</span>
+              <span class="b-metric-val text-green" id="b-p95">2.14 ms</span>
+            </div>
+            <div class="b-metric-box">
+              <span class="b-metric-label">Phân vị P₉₉</span>
+              <span class="b-metric-val" id="b-p99">2.68 ms</span>
+            </div>
+            <div class="b-metric-box">
+              <span class="b-metric-label">Trung bình &plusmn; Độ lệch</span>
+              <span class="b-metric-val" id="b-mean">1.85 &plusmn; 0.18 ms</span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- Multi-Model Benchmark Table Section -->
+    <section class="card section-benchmark-table">
+      <div class="card-header">
+        <div class="header-title-group">
+          <span class="header-badge badge-purple">Đối Chuẩn Khoa Học</span>
+          <h2 class="card-title">Bảng Đối Chuẩn Đa Mô Hình (Multi-Model Evaluation)</h2>
+        </div>
+        <span class="text-sm text-muted">Đánh giá trên tập kiểm tra độc lập 2025 H2 (Mùa mưa cực đoan)</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>STT</th>
+              <th>Mô hình Đối chuẩn</th>
+              <th>Cửa sổ L</th>
+              <th>Cấu hình Siêu tham số</th>
+              <th>Validation RMSE</th>
+              <th>Test RMSE</th>
+              <th>Wet-Hour RMSE</th>
+              <th>Cảnh báo F₁</th>
+              <th>Độ trễ P₉₅</th>
+              <th>Ràng buộc &le; 5ms</th>
+            </tr>
+          </thead>
+          <tbody id="benchmark-table-body">
+            <tr>
+              <td>1</td>
+              <td><strong>Persistence (Ngây thơ)</strong></td>
+              <td>1h</td>
+              <td>y(t+1) = prcp(t)</td>
+              <td>1.0699</td>
+              <td>1.5674</td>
+              <td>3.0420</td>
+              <td>0.5570</td>
+              <td>0.050 ms</td>
+              <td><span class="badge-tag tag-green">THỎA MÃN</span></td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td><strong>Linear Regression</strong></td>
+              <td>6h</td>
+              <td>Default OLS</td>
+              <td>0.8468</td>
+              <td>1.2203</td>
+              <td>2.3411</td>
+              <td>0.5112</td>
+              <td>3.628 ms</td>
+              <td><span class="badge-tag tag-green">THỎA MÃN</span></td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td><strong>Ridge Regression</strong></td>
+              <td>6h</td>
+              <td>alpha = 1.0</td>
+              <td>0.8467</td>
+              <td>1.2203</td>
+              <td>2.3411</td>
+              <td>0.5112</td>
+              <td>3.647 ms</td>
+              <td><span class="badge-tag tag-green">THỎA MÃN</span></td>
+            </tr>
+            <tr class="row-violated">
+              <td>4</td>
+              <td><strong>LightGBM (Mặc định)</strong></td>
+              <td>6h</td>
+              <td>100 trees, depth=-1</td>
+              <td>0.8499</td>
+              <td>1.2036</td>
+              <td>2.3136</td>
+              <td>0.5617</td>
+              <td><strong>5.604 ms</strong></td>
+              <td><span class="badge-tag tag-red">VI PHẠM (Quá tải)</span></td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td><strong>Random Search Best</strong></td>
+              <td>6h</td>
+              <td>200 trees, depth=12, lr=0.0171</td>
+              <td>0.8290</td>
+              <td>1.1891</td>
+              <td>2.2937</td>
+              <td>0.5778</td>
+              <td>4.939 ms</td>
+              <td><span class="badge-tag tag-green">THỎA MÃN</span></td>
+            </tr>
+            <tr class="row-champion">
+              <td>6</td>
+              <td><strong>Optuna TPE (Vô Địch Đồ Án)</strong></td>
+              <td><strong>1h</strong></td>
+              <td><strong>150 trees, depth=12, lr=0.0215</strong></td>
+              <td><strong>0.8318</strong></td>
+              <td><strong>1.1774</strong></td>
+              <td><strong>2.2735</strong></td>
+              <td><strong>0.5882</strong></td>
+              <td><strong>4.547 ms</strong></td>
+              <td><span class="badge-tag tag-champion">TỐI ƯU TOÀN CỤC</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <div class="footer-container">
+      <p>&copy; 2026 Trần An Kỳ &bull; Khoa Công nghệ Thông tin &bull; Trường Đại học Văn Lang</p>
+      <p class="footer-note">Đồ án Nhập môn Tối ưu hóa: Dự báo lượng mưa thời gian thực dưới ràng buộc độ trễ phần cứng</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
