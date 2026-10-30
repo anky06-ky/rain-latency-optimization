@@ -1,0 +1,74 @@
+{
+  "project": {
+    "name": "Rainfall Forecasting under Inference Latency Constraint",
+    "course": "Introduction to Optimization (Nhập môn Tối ưu hóa)",
+    "institution": "Faculty of Information Technology, Van Lang University",
+    "station_id": "48900",
+    "station_name": "Tan Son Nhat International Airport, Ho Chi Minh City",
+    "target_variable": "prcp",
+    "forecast_horizon_hours": 1,
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "constraints": {
+    "latency_e2e_max_ms": 5.0,
+    "device": "CPU",
+    "benchmark": {
+      "n_runs": 200,
+      "warmup": 20,
+      "metric": "P95"
+    }
+  },
+  "splits": {
+    "clean_period": {
+      "start": "2023-01-01 00:00:00",
+      "end": "2025-12-31 23:59:59"
+    },
+    "train": {
+      "target_end": "2024-12-31 23:59:59",
+      "description": "2023-2024 full years (17,544 hours)"
+    },
+    "validation": {
+      "target_start": "2025-01-01 00:00:00",
+      "target_end": "2025-06-30 23:59:59",
+      "description": "2025 H1 dry & transition season (4,344 hours)"
+    },
+    "test": {
+      "target_start": "2025-07-01 00:00:00",
+      "target_end": "2025-12-31 23:59:59",
+      "description": "2025 H2 peak monsoon season (4,416 hours)"
+    }
+  },
+  "search_space": {
+    "L_candidates": [1, 2, 3, 6, 12, 24, 36, 48, 72],
+    "hyperparameters": {
+      "n_estimators": [20, 300],
+      "max_depth": [2, 12],
+      "num_leaves": [7, 127],
+      "learning_rate": {
+        "low": 0.01,
+        "high": 0.25,
+        "log_scale": true
+      },
+      "min_child_samples": [10, 100]
+    }
+  },
+  "budget": {
+    "trials_per_seed": 100,
+    "seeds": [42, 123, 456, 789, 2026],
+    "total_evaluations": 500
+  },
+  "optimal_solution": {
+    "method": "Optuna TPE",
+    "L_hours": 1,
+    "n_estimators": 150,
+    "max_depth": 12,
+    "num_leaves": 15,
+    "learning_rate": 0.0215,
+    "min_child_samples": 20,
+    "val_rmse": 0.8318,
+    "test_rmse": 1.1774,
+    "p95_latency_ms": 4.00,
+    "rain_event_f1": 0.5882,
+    "status": "Feasible"
+  }
+}
