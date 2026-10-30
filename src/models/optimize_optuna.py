@@ -86,7 +86,7 @@ def run_optuna_study(
         # 5. Measure single-sample End-to-End Latency strictly on Validation slice (0% contact with Test set)
         val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
         raw_window = val_slice.iloc[-L:]
-        lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=150, warmup=15)
+        lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=200, warmup=20)
 
         # 6. Set constraint in Optuna: violation <= 0 means feasible (P95 <= 5.0 ms)
         p95_lat = lat_res["p95_latency_ms"]

@@ -3,10 +3,10 @@
     "method": "OptunaTPE",
     "L_hours": 1,
     "n_features": 10,
-    "n_estimators": 100,
+    "n_estimators": 150,
     "max_depth": 12,
-    "num_leaves": 31,
-    "learning_rate": 0.0412,
+    "num_leaves": 15,
+    "learning_rate": 0.0215,
     "min_child_samples": 20
   },
   "optimization_comparison_across_seeds": {
@@ -17,26 +17,26 @@
       789,
       2026
     ],
-    "random_search_val_rmse_mean": 0.8309,
-    "random_search_val_rmse_std": 0.0021,
-    "optuna_tpe_val_rmse_mean": 0.8305,
-    "optuna_tpe_val_rmse_std": 0.0018,
-    "val_rmse_relative_difference_pct": 0.06,
-    "paired_t_statistic": 0.5677,
-    "paired_t_p_value": 0.6006
+    "random_search_val_rmse_mean": 0.8306,
+    "random_search_val_rmse_std": 0.0017,
+    "optuna_tpe_val_rmse_mean": 0.8301,
+    "optuna_tpe_val_rmse_std": 0.0007,
+    "val_rmse_relative_difference_pct": 0.05,
+    "paired_t_statistic": 0.4527,
+    "paired_t_p_value": 0.6742
   },
   "performance_across_splits": {
-    "train_rmse": 0.7623,
-    "val_rmse": 0.8277,
-    "test_rmse": 1.1836,
-    "test_mae": 0.4013,
-    "wet_test_rmse": 2.2789,
-    "rain_event_f1": 0.5783,
-    "train_val_gap": 0.0654,
-    "train_test_gap": 0.4213
+    "train_rmse": 0.8243,
+    "val_rmse": 0.8318,
+    "test_rmse": 1.1774,
+    "test_mae": 0.3998,
+    "wet_test_rmse": 2.2735,
+    "rain_event_f1": 0.5882,
+    "train_val_gap": 0.0075,
+    "train_test_gap": 0.3531
   },
   "latency_compliance": {
-    "test_p95_latency_ms": 2.499,
+    "test_p95_latency_ms": 3.999,
     "constraint_threshold_ms": 5.0,
     "constraint_satisfied": true
   },

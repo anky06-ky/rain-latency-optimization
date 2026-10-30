@@ -24,7 +24,7 @@ def benchmark_end_to_end_latency(
     model: Any,
     raw_window_slice: pd.DataFrame,
     L: int,
-    n_runs: int = 300,
+    n_runs: int = 200,
     warmup: int = 20,
 ) -> Dict[str, float]:
     """
