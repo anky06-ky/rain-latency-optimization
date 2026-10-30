@@ -210,11 +210,18 @@ def plot_convergence_comparison(df_random: pd.DataFrame, df_optuna: pd.DataFrame
     plt.plot(trials_axis, mean_o, label="Main Method: Optuna (TPE)", color="#31a354", linewidth=2.2)
     plt.fill_between(trials_axis, mean_o - std_o, mean_o + std_o, color="#31a354", alpha=0.2)
 
-    plt.title("Hội tụ tối ưu: So sánh Best-so-far Validation RMSE qua 40 Trials (5 Seeds)", fontsize=12, fontweight="bold")
-    plt.xlabel("Số lượng Trials", fontsize=11)
+    # Highlight RQ1 Cutoff at trial 40 if trials > 40
+    if len(trials_axis) >= 40:
+        plt.axvline(x=40, color="#d95f02", linestyle="--", linewidth=1.5, alpha=0.85, label="RQ1 Ngưỡng đối chuẩn (40 trials)")
+        plt.text(41, np.nanmax(mean_r) - 0.0005, "Pha 2: Mở rộng ngân sách (RQ2)", fontsize=9, color="#d95f02", fontweight="bold")
+        plt.text(12, np.nanmax(mean_r) - 0.0005, "Pha 1: Đối chuẩn (RQ1)", fontsize=9, color="#666666", fontweight="bold")
+
+    n_trials_per_seed = len(trials_axis)
+    plt.title(f"Hội tụ tối ưu: So sánh Best-so-far Validation RMSE qua {n_trials_per_seed} Trials (5 Seeds)", fontsize=12, fontweight="bold")
+    plt.xlabel("Số lượng Trials (Ngân sách đánh giá)", fontsize=11)
     plt.ylabel("Validation RMSE tốt nhất (mm/h)", fontsize=11)
     plt.grid(True, linestyle=":", alpha=0.6)
-    plt.legend(fontsize=11)
+    plt.legend(fontsize=10, loc="upper right")
     plt.tight_layout()
 
     out_path = FIGURES_DIR / "convergence_comparison.png"

@@ -52,7 +52,7 @@ def sample_random_configuration(seed: int) -> Dict[str, Any]:
 
     return {
         "L": rng.choice(WINDOW_CANDIDATES),
-        "n_estimators": rng.choice([20, 50, 100, 150, 200, 300]),
+        "n_estimators": rng.choice([20, 50, 100, 150, 200, 300, 400, 500]),
         "max_depth": rng.choice([2, 3, 4, 6, 8, 10, 12]),
         "num_leaves": rng.choice([7, 15, 31, 63, 127]),
         "learning_rate": lr,
@@ -160,8 +160,8 @@ def run_random_search(n_trials: int = 40, seeds: List[int] = DEFAULT_SEEDS) -> p
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Constrained Random Search Baseline.")
-    parser.add_argument("--trials", type=int, default=40, help="Number of trials per seed (default: 40)")
+    parser = argparse.ArgumentParser(description="Run Constrained Random Search Baseline (RQ1 & RQ2).")
+    parser.add_argument("--trials", type=int, default=100, help="Number of trials per seed (default: 100 for 500 scaling trials; set 40 for RQ1 fair comparison)")
     parser.add_argument("--seeds", type=int, nargs="+", default=DEFAULT_SEEDS, help="Random seeds (default: 5 seeds)")
     args = parser.parse_args()
 
