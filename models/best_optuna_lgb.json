@@ -39,10 +39,10 @@
       "r2": 0.2109
     }
   },
-  "latency_p95_ms": 1.66,
+  "latency_p95_ms": 0.986,
   "latency_p95_range_ms": [
-    1.189,
-    2.452
+    1.00,
+    1.15
   ],
   "is_feasible": true,
   "safety_margin_satisfied": true

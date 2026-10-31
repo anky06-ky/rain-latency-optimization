@@ -1,8 +1,8 @@
 Model,L,Cấu hình,Train_RMSE,Val_RMSE,Test_RMSE,Test_MAE,Wet_Test_RMSE,Rain_Event_F1,Latency_P95,Feasible,Skill_Score_Persistence_pct,Skill_Score_Climatology_pct
 1. Persistence (Ngây thơ),1,y(t+1) = prcp(t),1.1615,1.0699,1.5674,0.4543,3.042,0.557,0.05,True,0.0,-9.72
 2. Climatology (Tháng-Giờ),1,"E[prcp | month, hour]",0.9319,0.9626,1.4285,0.6228,2.6167,0.1088,0.08,True,8.86,0.0
-3. Linear Regression,6,Default OLS,0.9128,0.8468,1.2203,0.4712,2.3411,0.5112,1.48,True,22.14,14.57
-4. Ridge Regression,6,alpha=1.0,0.9128,0.8467,1.2203,0.4713,2.3411,0.5112,1.65,True,22.14,14.57
-5. LightGBM (Mặc định),6,"100 trees, depth=-1",0.5825,0.8499,1.2036,0.4021,2.3136,0.5617,1.521,True,23.21,15.74
-6. Random Search Best,6,"200 trees, depth=12, lr=0.0171",0.7667,0.829,1.1891,0.3993,2.2937,0.5778,1.207,True,24.14,16.76
-7. Optuna TPE (Đề tài tối ưu),1,"150 trees, depth=12, lr=0.0215",0.8243,0.8318,1.1774,0.3998,2.2735,0.5882,1.66,True,24.88,17.58
+3. Linear Regression,6,Default OLS,0.9128,0.8468,1.2203,0.4712,2.3411,0.5112,1.031,True,22.14,14.57
+4. Ridge Regression,6,alpha=1.0,0.9128,0.8467,1.2203,0.4713,2.3411,0.5112,1.273,True,22.14,14.57
+5. LightGBM (Mặc định),6,"100 trees, depth=-1",0.5825,0.8499,1.2036,0.4021,2.3136,0.5617,2.275,True,23.21,15.74
+6. Random Search Best,6,"200 trees, depth=12, lr=0.0171",0.7667,0.829,1.1891,0.3993,2.2937,0.5778,1.18,True,24.14,16.76
+7. Optuna TPE (Đề tài tối ưu),1,"150 trees, depth=12, lr=0.0215",0.8243,0.8318,1.1774,0.3998,2.2735,0.5882,1.041,True,24.88,17.58
