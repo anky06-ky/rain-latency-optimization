@@ -7,7 +7,8 @@
     "max_depth": 12,
     "num_leaves": 15,
     "learning_rate": 0.0215,
-    "min_child_samples": 20
+    "min_child_samples": 20,
+    "hyperparameter_notes": "With num_leaves=15, max_depth=12 acts as an upper depth ceiling for leaf-wise tree growth rather than forcing a full binary tree."
   },
   "optimization_comparison_across_seeds": {
     "seeds_evaluated": [
@@ -17,13 +18,21 @@
       789,
       2026
     ],
+    "budget_per_seed": 100,
+    "total_trials_per_method": 500,
     "random_search_val_rmse_mean": 0.8306,
     "random_search_val_rmse_std": 0.0017,
     "optuna_tpe_val_rmse_mean": 0.8301,
     "optuna_tpe_val_rmse_std": 0.0007,
     "val_rmse_relative_difference_pct": 0.05,
     "paired_t_statistic": 0.4527,
-    "paired_t_p_value": 0.6742
+    "paired_t_p_value": 0.6742,
+    "variance_reduction_vs_100_trial_rs_pct": 57.6,
+    "feasible_rate_comparison": {
+      "optuna_tpe_feasible_rate_pct": 40.0,
+      "random_search_feasible_rate_pct": 26.2,
+      "feasible_rate_gain_percentage_points": 13.8
+    }
   },
   "performance_across_splits": {
     "train_rmse": 0.8243,
@@ -33,22 +42,56 @@
     "wet_test_rmse": 2.2735,
     "rain_event_f1": 0.5882,
     "train_val_gap": 0.0075,
-    "train_test_gap": 0.3531
+    "train_test_gap": 0.3531,
+    "generalization_notes": "Train-Val gap is minimal (+0.0075 mm/h). The increase on Test set is driven by seasonal climate distribution shift during the peak monsoon."
+  },
+  "skill_scores_on_test": {
+    "skill_score_vs_persistence_pct": 24.88,
+    "skill_score_vs_climatology_pct": 17.58
   },
   "latency_compliance": {
-    "test_p95_latency_ms": 4.547,
-    "constraint_threshold_ms": 5.0,
-    "constraint_satisfied": true
+    "test_p95_latency_ms": 1.66,
+    "test_p95_latency_range_ms": [
+      1.189,
+      2.452
+    ],
+    "all_runs_p95_ms": [
+      1.189,
+      1.965,
+      2.452,
+      1.66,
+      1.342
+    ],
+    "sla_constraint_threshold_ms": 5.0,
+    "sla_satisfied": true,
+    "internal_safety_margin_ms": 4.5,
+    "safety_margin_satisfied": true
   },
-  "data_split_specification": {
-    "train_hours": 17544,
-    "train_pct": 66.7,
-    "train_period": "2023-01-01 to 2024-12-31 (leap year 2024)",
-    "val_hours": 4344,
-    "val_pct": 16.5,
-    "val_period": "2025-01-01 to 2025-06-30",
-    "test_hours": 4416,
-    "test_pct": 16.8,
-    "test_period": "2025-07-01 to 2025-12-31 (monsoon peak)"
+  "data_split_statistics": {
+    "train": {
+      "period": "2023-01-01 to 2024-12-31",
+      "samples": 17286,
+      "mean_prcp_mm": 0.2326,
+      "std_prcp_mm": 1.0038,
+      "wet_hours_pct": 19.25,
+      "max_prcp_mm": 19.4
+    },
+    "validation": {
+      "period": "2025-01-01 to 2025-06-30 (dry & transition season)",
+      "samples": 4057,
+      "mean_prcp_mm": 0.1896,
+      "std_prcp_mm": 0.9298,
+      "wet_hours_pct": 15.23,
+      "max_prcp_mm": 16.4
+    },
+    "test": {
+      "period": "2025-07-01 to 2025-12-31 (peak tropical monsoon)",
+      "samples": 4399,
+      "mean_prcp_mm": 0.3549,
+      "std_prcp_mm": 1.3256,
+      "wet_hours_pct": 25.82,
+      "max_prcp_mm": 23.4,
+      "std_relative_increase_vs_val_pct": 42.57
+    }
   }
 }

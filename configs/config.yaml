@@ -63,6 +63,7 @@ optimal_solution:
   min_child_samples: 20
   val_rmse: 0.8318
   test_rmse: 1.1774
-  p95_latency_ms: 4.00
+  p95_latency_ms: 1.66
+  p95_latency_range_ms: [1.189, 2.452]
   rain_event_f1: 0.5882
-  status: "Feasible"
+  status: "Feasible (<= 5.0 ms SLA, <= 4.5 ms safety margin)"

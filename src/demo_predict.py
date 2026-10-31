@@ -25,9 +25,6 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-import warnings
-warnings.filterwarnings("ignore")
-
 from src.features.build_features import extract_single_sample_features, load_clean_weather_data
 
 MODEL_PATH = PROJECT_ROOT / "models" / "best_optuna_lgb.joblib"
@@ -72,17 +69,19 @@ def run_demo():
     print(f"    Mưa giờ trước (prcp): {latest_row['prcp_clean']:.1f} mm/h")
 
     # 3. Timed End-to-End Inference
+    predict_fn = model.booster_.predict if hasattr(model, "booster_") else model.predict
+
     # Warmup
     for _ in range(10):
         feat = extract_single_sample_features(sample_window, L=L)
-        _ = model.predict(feat)
+        _ = predict_fn(feat)
 
     # Measure high precision
     t0 = time.perf_counter_ns()
     feat_vector = extract_single_sample_features(sample_window, L=L)
     t_feat = time.perf_counter_ns()
 
-    pred_rain = float(model.predict(feat_vector)[0])
+    pred_rain = float(predict_fn(feat_vector)[0])
     t_pred = time.perf_counter_ns()
 
     feat_time_ms = (t_feat - t0) / 1e6
