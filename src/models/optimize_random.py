@@ -5,7 +5,8 @@ Searches decision variables x = (L, theta) over a bounded space:
     - L: Historical window length in hours
     - theta: LightGBM hyperparameters
 Objective: Minimize Validation RMSE subject to P95 End-to-End Latency <= 5.0 ms.
-Budget: 40 trials per seed across 5 random seeds (total 200 evaluations).
+Budget: Default 100 trials per seed across 5 random seeds (total 500 evaluations for RQ2 scaling);
+        can be set to 40 trials per seed (200 evaluations) for RQ1 fair budget comparison.
 """
 
 import argparse

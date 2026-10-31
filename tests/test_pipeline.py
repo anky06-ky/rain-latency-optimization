@@ -1,5 +1,6 @@
 """
 Unit Tests for Weather Data Pipeline, Causal Imputation, and Inference Latency.
+Includes strict leakage checks, batch vs single-sample feature parity, and latency verification.
 """
 
 import sys
@@ -56,31 +57,80 @@ class TestPipeline:
         assert not df_feat_6[fcols_6].isna().any().any(), "Feature matrix contains NaN values"
 
     def test_chronological_splits_leakage_free(self, clean_data):
-        """Verify chronological splits have 0% timestamp overlap and valid sample counts."""
+        """Verify chronological splits have strict 0% timestamp overlap and valid sample counts."""
         df_feat, fcols = build_features(clean_data, L=1)
         (X_tr, y_tr), (X_v, y_v), (X_te, y_te) = split_time_series(df_feat, fcols)
 
-        # Ensure no empty splits and proper chronological segregation
+        # Ensure no empty splits and valid lengths
         assert len(X_tr) > 0 and len(X_v) > 0 and len(X_te) > 0
         assert len(X_tr) == len(y_tr)
         assert len(X_v) == len(y_v)
         assert len(X_te) == len(y_te)
 
+        # Strict timestamp segregation check: max(Train) < min(Val) < max(Val) < min(Test)
+        train_target_max = df_feat.loc[X_tr.index, "target_time"].max()
+        val_target_min = df_feat.loc[X_v.index, "target_time"].min()
+        val_target_max = df_feat.loc[X_v.index, "target_time"].max()
+        test_target_min = df_feat.loc[X_te.index, "target_time"].min()
+
+        assert train_target_max < val_target_min, f"Train overlap: {train_target_max} >= {val_target_min}"
+        assert val_target_max < test_target_min, f"Val overlap: {val_target_max} >= {test_target_min}"
+
+    def test_feature_parity_batch_vs_single_sample(self, clean_data):
+        """
+        Verify mathematical parity between batch feature extraction (build_features)
+        and vectorized single-sample inference (extract_single_sample_features).
+        Critical check ensuring online deployment matches offline training exactly.
+        """
+        for test_L in [1, 6]:
+            df_feat, fcols = build_features(clean_data, L=test_L)
+            sample_subset = df_feat.sample(n=10, random_state=42)
+
+            for _, row in sample_subset.iterrows():
+                target_time = row["time"]
+                batch_vector = row[fcols].to_numpy(dtype=np.float32).reshape(1, -1)
+
+                # Locate window ending at target_time in clean_data
+                idx = clean_data[clean_data["time"] == target_time].index[0]
+                window = clean_data.iloc[idx - test_L + 1 : idx + 1]
+
+                single_vector = extract_single_sample_features(window, L=test_L)
+
+                # Assert feature parity within float32 numerical tolerance
+                assert np.allclose(batch_vector, single_vector, atol=1e-5), (
+                    f"Feature mismatch for L={test_L} at timestamp {target_time}: "
+                    f"max diff = {np.max(np.abs(batch_vector - single_vector))}"
+                )
+
     def test_single_sample_vectorization_latency(self, clean_data):
-        """Verify NumPy-vectorized single-sample extraction runs in < 5.0 ms."""
+        """Verify statistical single-sample extraction runs reliably within constraint budget."""
         sample_window = clean_data.iloc[-1:].copy()
-        t0 = time.perf_counter_ns()
-        feat_vector = extract_single_sample_features(sample_window, L=1)
-        elapsed_ms = (time.perf_counter_ns() - t0) / 1e6
+
+        # Warmup
+        for _ in range(20):
+            _ = extract_single_sample_features(sample_window, L=1)
+
+        durations_ms = []
+        for _ in range(50):
+            t0 = time.perf_counter_ns()
+            feat_vector = extract_single_sample_features(sample_window, L=1)
+            durations_ms.append((time.perf_counter_ns() - t0) / 1e6)
+
+        median_ms = np.median(durations_ms)
+        p95_ms = np.percentile(durations_ms, 95)
 
         assert feat_vector.shape == (1, 10), f"Expected shape (1, 10), got {feat_vector.shape}"
         assert not np.isnan(feat_vector).any(), "Extracted features contain NaN"
-        assert elapsed_ms < 5.0, f"Feature extraction too slow: {elapsed_ms:.2f} ms"
+        assert p95_ms < 5.0, f"P95 Feature extraction too slow: {p95_ms:.2f} ms"
+        assert median_ms < 2.0, f"Median Feature extraction too slow: {median_ms:.2f} ms"
 
     def test_champion_model_artifact(self, clean_data):
-        """Verify the saved champion model can be loaded and infers within latency budget."""
+        """Verify the saved champion model artifact can be loaded and behaves consistently."""
         model_path = PROJECT_ROOT / "models" / "best_optuna_lgb.joblib"
+        meta_path = PROJECT_ROOT / "models" / "best_optuna_lgb.json"
+
         assert model_path.exists(), f"Model artifact not found at {model_path}"
+        assert meta_path.exists(), f"Metadata JSON not found at {meta_path}"
 
         model = joblib.load(model_path)
         sample_window = clean_data.iloc[-1:].copy()
@@ -91,4 +141,9 @@ class TestPipeline:
 
         prediction = model.predict(feat_df)
         assert len(prediction) == 1, "Expected single prediction"
-        assert prediction[0] >= -0.5, "Prediction is unreasonably negative"
+        assert prediction[0] >= 0.0 or prediction[0] >= -0.05, "Prediction is unreasonably negative"
+
+        # Check prediction on dry/zero weather conditions
+        dry_df = pd.DataFrame(np.zeros((1, 10), dtype=np.float32), columns=fcols)
+        dry_pred = model.predict(dry_df)
+        assert dry_pred[0] < 1.0, f"Expected near-zero rain for zero input, got {dry_pred[0]:.2f}"

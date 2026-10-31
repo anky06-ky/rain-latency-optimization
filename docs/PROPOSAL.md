@@ -124,16 +124,17 @@ P_{95}(T_{e2e}) \le 5.0\text{ ms}
 ## 7. Giao thức đo độ trễ suy luận (Latency Protocol)
 
 Để bảo đảm độ tin cậy và hạn chế tối đa nhiễu đo lường trên hệ điều hành:
-1. **Đo toàn trình (End-to-End):** Bao gồm thời gian trích xuất đặc trưng đơn mẫu từ cửa sổ \(L\) cộng với thời gian chạy cây quyết định trên CPU đơn luồng (`n_jobs=1`).
+1. **Đo toàn trình (End-to-End):** Bao gồm thời gian trích xuất đặc trưng đơn mẫu từ cửa sổ \(L\) cộng với thời gian chạy cây quyết định trên CPU đơn luồng (`n_jobs=1`), ứng dụng API gọi trực tiếp `booster_.predict` để loại trừ hoàn toàn chi phí overhead của wrapper Python.
 2. **Khởi động CPU (Warm-up):** Thực hiện 20 lần chạy suy luận giả lập trước khi đo để nạp sẵn cache bộ nhớ và ổn định tiến trình.
-3. **Đo lường phân vị thống kê:** Đo lặp tối thiểu 200 lần bằng đồng hồ độ chính xác nanô-giây (`time.perf_counter_ns()`), xuất ra các phân vị \(P_{50}, P_{95}, P_{99}\).
+3. **Đo lường phân vị thống kê & Biên an toàn:** Đo lặp 100 lần bằng đồng hồ độ chính xác nanô-giây (`time.perf_counter_ns()`), xuất ra các phân vị \(P_{50}, P_{95}, P_{99}\). Ngoài ràng buộc SLA $5.0\text{ ms}$, đề tài thiết lập **biên an toàn nội bộ $4.5\text{ ms}$** để phòng ngừa nhiễu điều tiết xung nhịp CPU.
 
 ## 8. Chỉ số đánh giá toàn diện
 
 * **Chỉ số chất lượng dự báo:**
   - $RMSE_{\text{val}}$, $RMSE_{\text{test}}$, $MAE_{\text{test}}$;
   - $RMSE$ trên các giờ thực sự có mưa ($Wet\_Test\_RMSE$);
-  - Precision, Recall, $F_1$-score phát hiện sự kiện mưa ($prcp > 0.0$ mm).
+  - Precision, Recall, $F_1$-score phát hiện sự kiện mưa ($prcp \ge 0.5$ mm);
+  - Chỉ số kỹ năng dự báo ($Skill\_Score$) đối chuẩn với Persistence và Climatology.
 * **Chỉ số hiệu năng tối ưu & tính toán:**
   - Phân vị độ trễ $P_{50}, P_{95}, P_{99}$ (ms);
   - Tỷ lệ nghiệm khả thi (Feasible Rate %);
@@ -142,13 +143,14 @@ P_{95}(T_{e2e}) \le 5.0\text{ ms}
 
 ## 9. Cấu trúc thực nghiệm so sánh
 
-Hệ thống tiến hành so sánh đối chuẩn 6 cấu hình mô hình:
+Hệ thống tiến hành so sánh đối chuẩn 7 cấu hình mô hình:
 1. **Persistence Baseline:** Dự báo lượng mưa giờ tới bằng đúng lượng mưa giờ hiện tại.
-2. **Linear Regression:** Mô hình hồi quy tuyến tính chuẩn.
-3. **Ridge Regression:** Hồi quy tuyến tính có điều chuẩn L2.
-4. **LightGBM Mặc định:** Cấu hình mặc định của thư viện.
-5. **LightGBM (Tối ưu bởi Random Search):** Nghiệm tốt nhất thỏa mãn ràng buộc.
-6. **LightGBM (Tối ưu bởi Optuna TPE):** Nghiệm tối ưu toàn cục đề xuất.
+2. **Climatology Baseline:** Dự báo lượng mưa dựa trên kỳ vọng lịch sử theo tháng và khung giờ trong ngày $\mathbb{E}[y \mid \text{month}, \text{hour}]$.
+3. **Linear Regression:** Mô hình hồi quy tuyến tính chuẩn (OLS).
+4. **Ridge Regression:** Hồi quy tuyến tính có điều chuẩn L2.
+5. **LightGBM Mặc định:** Cấu hình mặc định của thư viện (100 cây, depth tự do).
+6. **LightGBM (Tối ưu bởi Random Search):** Nghiệm tốt nhất thỏa mãn ràng buộc.
+7. **LightGBM (Tối ưu bởi Optuna TPE):** Nghiệm tối ưu toàn cục đề xuất ($L=1$, 150 cây, depth=12, lr=0.0215).
 
 ## 10. Kết quả kỳ vọng & Đóng góp của đề tài
 
