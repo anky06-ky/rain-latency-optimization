@@ -22,8 +22,12 @@ Urban flooding triggered by short-duration, high-intensity rainfall is an acute 
 * **RQ3 (Accuracy-Latency Trade-off):** Across an expanded model capacity space ($n_{\text{estimators}} \in [20, 500]$) and historical windows $L$, how does the Pareto frontier characterize the trade-off between forecast precision and execution latency?
 
 * **Target Variable:** Total precipitation 1 hour ahead ($y_{t+1}$ in mm) at Tan Son Nhat Station (WMO ID: `48900`).
-* **Raw Data Source & GO/NO-GO Quality Gate:** 
-  Dữ liệu quan trắc gốc được tải từ Meteostat giai đoạn 2021–2026 (`data/raw/weather_meteostat_2021_2026.csv`). Tuy nhiên, cổng kiểm soát chất lượng dữ liệu (**GO/NO-GO Gate**) đã loại bỏ giai đoạn 2021–2022 do trong thời gian gián đoạn dịch bệnh Covid-19, trạm 48900 xuất hiện nhiều khoảng trống mất dữ liệu vượt ngưỡng cho phép (>5% số giờ thiếu). Giai đoạn 3 năm liên tục **2023–2025** (26.304 giờ) đạt tiêu chuẩn chất lượng cao nhất (tỷ lệ thiếu lượng mưa chỉ 2.13%) và được chọn làm tập dữ liệu nghiên cứu chính thức.
+* **Raw Data Source & Data Quality Gate:** 
+  Dữ liệu quan trắc gốc được kiểm toán từ Meteostat giai đoạn 2021–2026 (`data/raw/weather_meteostat_2021_2026.csv`). Cổng kiểm soát chất lượng dữ liệu (**Data Quality Gate**) căn cứ trên biểu đồ phân tích tỷ lệ thiếu hụt theo năm ([`results/figures/missing_rate_by_year.png`](results/figures/missing_rate_by_year.png)) đã loại bỏ giai đoạn 2021–2022 do vi phạm nghiêm trọng ngưỡng kiểm soát 5%:
+  - **Năm 2021:** Thiếu **100.0%** dữ liệu lượng mưa (trạm 48900 chưa tích hợp cảm biến đo mưa theo giờ).
+  - **Năm 2022:** Thiếu **40.23%** (chỉ bắt đầu ghi nhận từ giữa năm 2022).
+  
+  Ngược lại, giai đoạn 3 năm liên tục **2023–2025** (26.304 giờ) đạt độ đầy đủ vượt trội (năm 2023 thiếu 0.00%, năm 2024 thiếu 2.93%, năm 2025 thiếu 3.47%, trung bình toàn kỳ chỉ **2.13%**, đạt chuẩn $\le 5\%$) và được chọn làm tập dữ liệu nghiên cứu chính thức.
 
 ---
 
@@ -126,6 +130,7 @@ Bảng đối chuẩn 7 mô hình được đồng bộ từ nguồn dữ liệu
 1. **Làm rõ Hai Thang đo Độ trễ (Search Phase vs Deployment Phase):**
    - **Giai đoạn Thăm dò Tìm kiếm (Search Phase - 500+500 trials):** Độ trễ được đo qua interface Scikit-learn wrapper tiêu chuẩn (`LGBMRegressor.predict`) nhằm phản ánh môi trường phát triển AutoML thông thường. Do overhead kiểm tra kiểu và định danh cột của Python wrapper, độ trễ trung vị trong nhật ký là ~4.49 ms (với nhiều trial vượt 5 ms đến 40 ms khi $L$ lớn và cây sâu). Ràng buộc $5.0\text{ ms}$ tại pha này đóng vai trò bộ lọc tích cực, loại bỏ 37.4% nghiệm Optuna và 51.4% nghiệm Random Search không đạt chuẩn thời gian thực.
    - **Giai đoạn Triển khai Thực tế (Production Deployment / Champion Model):** Mô hình được tối ưu bằng cách gọi trực tiếp C-API `model.booster_.predict`, triệt tiêu hoàn toàn chi phí bọc wrapper của Python và đưa độ trễ đơn mẫu xuống **~1.04 ms** (trung vị đa lượt). Nhờ đó, mô hình đạt biên an toàn vận hành rất cao ($\le 4.5\text{ ms}$) trước mọi biến động điều tiết xung nhịp phần cứng.
+   - **Bản chất của Tỷ lệ Khả thi (Feasible Rate):** Cần lưu ý rằng **quá trình tìm kiếm sử dụng một thước đo ràng buộc nghiêm ngặt hơn triển khai** (do cộng thêm overhead của wrapper scikit-learn). Do đó, tỷ lệ khả thi ghi nhận trong quá trình tìm kiếm (Optuna 62.6% vs RS 48.6%) phản ánh năng lực lọc ràng buộc và điều hướng hiệu quả của thuật toán tối ưu hóa trong không gian tìm kiếm, chứ không phản ánh giới hạn đáp ứng SLA khi triển khai thực tế (vốn chạy C-API chỉ tốn ~1.04 ms, cách rất xa ngưỡng vi phạm 5.0 ms).
 2. **Quy ước Tính Validation RMSE giữa Trial Thăm dò và Retrain:**
    - *Trong nhật ký thăm dò (Trial gốc):* Optuna ghi nhận Val RMSE = `0.8297` (seed 456, L=1, 150 cây); Random Search ghi nhận `0.8290` (seed 42, L=6, 200 cây).
    - *Khi tái huấn luyện xác nhận trên seed 42:* Optuna đạt Val RMSE = `0.8318`, Random Search đạt `0.8290`.
@@ -241,6 +246,10 @@ pip install -r requirements.txt
    - Dữ liệu lượng mưa theo giờ tại Tân Sơn Nhất có tới $>74\%$ số giờ không mưa ($0\text{ mm}$). Việc chỉ nhìn vào RMSE toàn cục có thể bị chi phối bởi các giờ khô hạn. Vì vậy, báo cáo đã bổ sung `Wet_Test_RMSE` ($2.2735\text{ mm/h}$) và $F_1\text{-score}$ phát hiện mưa dông ($0.5882$) nhằm phục vụ trực tiếp cho mục tiêu cảnh báo ngập lụt.
 4. **Phạm vi Trạm Đơn lẻ:**
    - Dữ liệu thu thập từ trạm Tân Sơn Nhất (`48900`) chưa phản ánh tính phân hóa không gian (spatial heterogeneity) lượng mưa trên toàn địa bàn TP.HCM.
+5. **Độ lệch Mẫu khi So sánh các Cửa sổ $L$ (Sample Truncation by Lag):**
+   - Do mỗi giá trị cửa sổ lịch sử $L$ đòi hỏi $L$ hàng dữ liệu quá khứ liên tục để khởi tạo đặc trưng, số dòng bị `dropna` ở đầu tập dữ liệu sẽ khác nhau giữa các giá trị $L$ (ví dụ: cấu hình $L=72$ mất 71 dòng dữ liệu đầu tiên nhiều hơn cấu hình $L=1$). Dù độ lệch này rất nhỏ trên tổng số 17.286 mẫu train (~0.4%), trong các nghiên cứu tiếp theo có thể chuẩn hóa bằng cách cắt bỏ cố định $L_{\max} = 72$ dòng đầu tiên cho tất cả các cấu hình để đảm bảo tập mẫu đánh giá hoàn toàn đồng nhất tuyệt đối.
+6. **Chiến lược Kiểm định Chéo Theo Chuỗi Thời Gian (Rolling-Origin Cross-Validation):**
+   - Để mô phỏng sát nhất kịch bản vận hành thực tế và thách thức chuyển dịch mùa tự nhiên (với H2 là mùa mưa đỉnh điểm), nghiên cứu hiện tại áp dụng một phân chia theo trình tự thời gian cố định: Huấn luyện (2023–2024), Đánh giá kiểm định (H1/2025) và Kiểm thử độc lập (H2/2025). Hướng phát triển tiếp theo là áp dụng phương pháp Time-Series Rolling-Origin Cross-Validation (hoặc Expanding Window CV) qua nhiều chu kỳ năm khác nhau nhằm đo lường tính khái quát hóa và độ ổn định dài hạn của các mô hình.
 
 ---
 

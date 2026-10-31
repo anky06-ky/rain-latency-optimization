@@ -104,18 +104,18 @@ class TestPipeline:
 
         # Test model prediction parity on the loaded Champion model (L=1)
         model_path = PROJECT_ROOT / "models" / "best_optuna_lgb.joblib"
-        if model_path.exists():
-            champ_model = joblib.load(model_path)
-            predict_fn = champ_model.booster_.predict if hasattr(champ_model, "booster_") else champ_model.predict
-            df_feat_1, fcols_1 = build_features(clean_data, L=1)
-            for _, row in df_feat_1.sample(n=25, random_state=123).iterrows():
-                b_vec = row[fcols_1].to_numpy(dtype=np.float32).reshape(1, -1)
-                idx = clean_data[clean_data["time"] == row["time"]].index[0]
-                w = clean_data.iloc[idx : idx + 1]
-                s_vec = extract_single_sample_features(w, L=1)
-                p_batch = float(predict_fn(b_vec)[0])
-                p_single = float(predict_fn(s_vec)[0])
-                assert abs(p_batch - p_single) < 1e-5, f"Prediction mismatch: batch={p_batch}, single={p_single}"
+        assert model_path.exists(), f"Champion model artifact missing at {model_path}"
+        champ_model = joblib.load(model_path)
+        predict_fn = champ_model.booster_.predict if hasattr(champ_model, "booster_") else champ_model.predict
+        df_feat_1, fcols_1 = build_features(clean_data, L=1)
+        for _, row in df_feat_1.sample(n=25, random_state=123).iterrows():
+            b_vec = row[fcols_1].to_numpy(dtype=np.float32).reshape(1, -1)
+            idx = clean_data[clean_data["time"] == row["time"]].index[0]
+            w = clean_data.iloc[idx : idx + 1]
+            s_vec = extract_single_sample_features(w, L=1)
+            p_batch = float(predict_fn(b_vec)[0])
+            p_single = float(predict_fn(s_vec)[0])
+            assert abs(p_batch - p_single) < 1e-5, f"Prediction mismatch: batch={p_batch}, single={p_single}"
 
     def test_single_sample_vectorization_latency(self, clean_data):
         """Verify statistical single-sample extraction runs reliably within constraint budget."""
