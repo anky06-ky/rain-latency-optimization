@@ -82,7 +82,7 @@ class TestPipeline:
         and vectorized single-sample inference (extract_single_sample_features).
         Critical check ensuring online deployment matches offline training exactly.
         """
-        for test_L in [1, 6]:
+        for test_L in [1, 6, 24, 72]:
             df_feat, fcols = build_features(clean_data, L=test_L)
             sample_subset = df_feat.sample(n=10, random_state=42)
 
@@ -101,6 +101,21 @@ class TestPipeline:
                     f"Feature mismatch for L={test_L} at timestamp {target_time}: "
                     f"max diff = {np.max(np.abs(batch_vector - single_vector))}"
                 )
+
+        # Test model prediction parity on the loaded Champion model (L=1)
+        model_path = PROJECT_ROOT / "models" / "best_optuna_lgb.joblib"
+        if model_path.exists():
+            champ_model = joblib.load(model_path)
+            predict_fn = champ_model.booster_.predict if hasattr(champ_model, "booster_") else champ_model.predict
+            df_feat_1, fcols_1 = build_features(clean_data, L=1)
+            for _, row in df_feat_1.sample(n=25, random_state=123).iterrows():
+                b_vec = row[fcols_1].to_numpy(dtype=np.float32).reshape(1, -1)
+                idx = clean_data[clean_data["time"] == row["time"]].index[0]
+                w = clean_data.iloc[idx : idx + 1]
+                s_vec = extract_single_sample_features(w, L=1)
+                p_batch = float(predict_fn(b_vec)[0])
+                p_single = float(predict_fn(s_vec)[0])
+                assert abs(p_batch - p_single) < 1e-5, f"Prediction mismatch: batch={p_batch}, single={p_single}"
 
     def test_single_sample_vectorization_latency(self, clean_data):
         """Verify statistical single-sample extraction runs reliably within constraint budget."""
@@ -136,14 +151,15 @@ class TestPipeline:
         sample_window = clean_data.iloc[-1:].copy()
         feat_vector = extract_single_sample_features(sample_window, L=1)
 
-        fcols = getattr(model, "feature_name_", [f"f_{i}" for i in range(10)])
-        feat_df = pd.DataFrame(feat_vector, columns=fcols)
-
-        prediction = model.predict(feat_df)
+        predict_fn = model.booster_.predict if hasattr(model, "booster_") else model.predict
+        prediction = predict_fn(feat_vector)
         assert len(prediction) == 1, "Expected single prediction"
-        assert prediction[0] >= 0.0 or prediction[0] >= -0.05, "Prediction is unreasonably negative"
+        assert prediction[0] >= -0.05, f"Prediction is unreasonably negative: {prediction[0]}"
 
-        # Check prediction on dry/zero weather conditions
-        dry_df = pd.DataFrame(np.zeros((1, 10), dtype=np.float32), columns=fcols)
-        dry_pred = model.predict(dry_df)
-        assert dry_pred[0] < 1.0, f"Expected near-zero rain for zero input, got {dry_pred[0]:.2f}"
+        # Check prediction on realistic dry weather observation from dataset
+        dry_candidates = clean_data[(clean_data["prcp_clean"] == 0.0) & (clean_data["temp"] >= 30.0) & (clean_data["rhum"] <= 55.0)]
+        assert not dry_candidates.empty, "No realistic dry sample found in data"
+        dry_window = dry_candidates.iloc[-1:]
+        dry_vector = extract_single_sample_features(dry_window, L=1)
+        dry_pred = float(predict_fn(dry_vector)[0])
+        assert dry_pred < 0.5, f"Expected dry forecast (< 0.5 mm/h) for clear dry weather, got {dry_pred:.2f} mm/h"

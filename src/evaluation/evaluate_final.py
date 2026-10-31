@@ -593,6 +593,23 @@ def evaluate_final_test_set():
     # 7. Figure: Actual vs Predicted Rainfall on Test Set
     plot_actual_vs_predicted(clean_df, final_model, L=int(best_opt_config["L"]))
 
+    # Compute feasible counts dynamically from CSVs
+    opt_feas_count_50 = int((df_optuna["p95_latency_ms"] <= 5.0).sum())
+    rnd_feas_count_50 = int((df_random["p95_latency_ms"] <= 5.0).sum())
+    opt_feas_pct_50 = round(float(opt_feas_count_50 / len(df_optuna) * 100), 1)
+    rnd_feas_pct_50 = round(float(rnd_feas_count_50 / len(df_random) * 100), 1)
+
+    opt_feas_count_45 = int((df_optuna["p95_latency_ms"] <= 4.5).sum())
+    rnd_feas_count_45 = int((df_random["p95_latency_ms"] <= 4.5).sum())
+    opt_feas_pct_45 = round(float(opt_feas_count_45 / len(df_optuna) * 100), 1)
+    rnd_feas_pct_45 = round(float(rnd_feas_count_45 / len(df_random) * 100), 1)
+
+    # Phase 1 comparison (first 40 trials per seed)
+    opt_p1 = df_optuna.groupby("seed").head(40)
+    rnd_p1 = df_random.groupby("seed").head(40)
+    opt_p1_feas = int((opt_p1["p95_latency_ms"] <= 5.0).sum())
+    rnd_p1_feas = int((rnd_p1["p95_latency_ms"] <= 5.0).sum())
+
     # 8. Final JSON Report
     best_row = bench_df.iloc[-1]
     champ_lat = extra_stats["champion_latency"]
@@ -621,9 +638,29 @@ def evaluate_final_test_set():
             "paired_t_p_value": round(float(p_val), 4),
             "variance_reduction_vs_100_trial_rs_pct": round(float((rnd_seed_best.std() - opt_seed_best.std()) / rnd_seed_best.std() * 100), 1),
             "feasible_rate_comparison": {
-                "optuna_tpe_feasible_rate_pct": 40.0,
-                "random_search_feasible_rate_pct": 26.2,
-                "feasible_rate_gain_percentage_points": 13.8,
+                "phase_1_budget_40_trials": {
+                    "optuna_feasible_count": opt_p1_feas,
+                    "optuna_feasible_rate_pct": round(opt_p1_feas / len(opt_p1) * 100, 1),
+                    "random_feasible_count": rnd_p1_feas,
+                    "random_feasible_rate_pct": round(rnd_p1_feas / len(rnd_p1) * 100, 1),
+                    "gain_percentage_points": round((opt_p1_feas - rnd_p1_feas) / len(opt_p1) * 100, 1),
+                },
+                "phase_2_budget_100_trials": {
+                    "threshold_5_0_ms": {
+                        "optuna_feasible_count": opt_feas_count_50,
+                        "optuna_feasible_rate_pct": opt_feas_pct_50,
+                        "random_feasible_count": rnd_feas_count_50,
+                        "random_feasible_rate_pct": rnd_feas_pct_50,
+                        "gain_percentage_points": round(opt_feas_pct_50 - rnd_feas_pct_50, 1),
+                    },
+                    "safety_margin_4_5_ms": {
+                        "optuna_feasible_count": opt_feas_count_45,
+                        "optuna_feasible_rate_pct": opt_feas_pct_45,
+                        "random_feasible_count": rnd_feas_count_45,
+                        "random_feasible_rate_pct": rnd_feas_pct_45,
+                        "gain_percentage_points": round(opt_feas_pct_45 - rnd_feas_pct_45, 1),
+                    },
+                },
             },
         },
         "performance_across_splits": {
