@@ -1,8 +1,8 @@
 """
-Interactive Demo Script for Next-Hour Rainfall Forecasting.
+Script demo tương tác dự báo lượng mưa cho giờ kế tiếp.
 
-Loads the trained champion model (Optuna TPE), performs end-to-end single-sample
-inference on realistic weather observations, and reports prediction latency.
+Nạp mô hình champion đã huấn luyện (Optuna TPE), chạy suy luận end-to-end trên một mẫu đơn
+gồm các quan trắc thời tiết sát thực tế, rồi báo cáo độ trễ dự báo.
 """
 
 import sys
@@ -13,12 +13,12 @@ import joblib
 import numpy as np
 import pandas as pd
 
-# Add project root to sys.path
+# Thêm thư mục gốc của dự án vào sys.path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Ensure UTF-8 output on Windows console
+# Đảm bảo xuất UTF-8 trên console Windows
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -37,7 +37,7 @@ def run_demo():
     print("Trạm quan trắc Tân Sơn Nhất (ID: 48900) - Ràng buộc: T_e2e <= 5.0 ms")
     print("=" * 68)
 
-    # 1. Load model artifact & metadata
+    # 1. Nạp artifact mô hình và metadata
     if not MODEL_PATH.exists():
         print(f"[-] Model artifact not found at {MODEL_PATH}. Run 'python src/models/train.py' first.")
         return
@@ -49,9 +49,9 @@ def run_demo():
     print(f"[+] Loaded Model: {meta['model_type']} (L={L}h, Trees={meta['hyperparameters']['n_estimators']}, Depth={meta['hyperparameters']['max_depth']}, lr={meta['hyperparameters']['learning_rate']})")
     print(f"    Features in model ({meta['n_features']}): {meta['feature_names']}")
 
-    # 2. Get realistic sample from clean weather observations
+    # 2. Lấy mẫu sát thực tế từ dữ liệu quan trắc thời tiết đã làm sạch
     clean_df = load_clean_weather_data()
-    # Pick a sample from monsoon season with rain (e.g. October 2025)
+    # Chọn một mẫu có mưa trong mùa mưa (ví dụ tháng 10/2025)
     sample_window = clean_df[(clean_df["time"] >= "2025-10-15 14:00:00")].head(L).copy()
     if sample_window.empty or len(sample_window) < L:
         sample_window = clean_df.iloc[-L:].copy()
@@ -68,15 +68,15 @@ def run_demo():
     print(f"    Tốc độ gió (wspd)   : {latest_row['wspd']:.1f} km/h")
     print(f"    Mưa giờ trước (prcp): {latest_row['prcp_clean']:.1f} mm/h")
 
-    # 3. Timed End-to-End Inference
+    # 3. Suy luận end-to-end có đo thời gian
     predict_fn = model.booster_.predict if hasattr(model, "booster_") else model.predict
 
-    # Warmup
+    # Chạy warmup
     for _ in range(10):
         feat = extract_single_sample_features(sample_window, L=L)
         _ = predict_fn(feat)
 
-    # Measure high precision
+    # Đo với độ chính xác cao
     t0 = time.perf_counter_ns()
     feat_vector = extract_single_sample_features(sample_window, L=L)
     t_feat = time.perf_counter_ns()
@@ -88,9 +88,9 @@ def run_demo():
     pred_time_ms = (t_pred - t_feat) / 1e6
     total_time_ms = (t_pred - t0) / 1e6
 
-    pred_rain = max(0.0, pred_rain)  # Non-negative precipitation
+    pred_rain = max(0.0, pred_rain)  # Lượng mưa không âm
 
-    # 4. Display Results & Flood Alert Assessment
+    # 4. Hiển thị kết quả và đánh giá cảnh báo ngập
     print(f"\n--- [2] Kết quả dự báo cho giờ kế tiếp ({target_time.strftime('%Y-%m-%d %H:%M')}) ---")
     print(f"    Lượng mưa dự báo (y_hat) : {pred_rain:.2f} mm/h")
     if pred_rain >= 10.0:

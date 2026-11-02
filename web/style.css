@@ -1,6 +1,6 @@
 /* ==========================================================================
-   RAINFALL NOWCASTING & HARDWARE LATENCY DASHBOARD - PURE VANILLA CSS
-   Design System: Meteor-Tech Dark Glassmorphism with Electric Blue Accents
+   DASHBOARD DỰ BÁO MƯA NGẮN HẠN & ĐỘ TRỄ PHẦN CỨNG - CSS THUẦN (VANILLA)
+   Hệ thống thiết kế: Meteor-Tech - glassmorphism nền tối với điểm nhấn màu xanh điện
    ========================================================================== */
 
 :root {
@@ -33,8 +33,8 @@
   --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   --shadow-glow: 0 0 25px rgba(14, 165, 233, 0.2);
 
-  /* Chart roles. Series are categorical slots 1-2 (dark steps), validated with the dataviz
-     palette checker against the card surface #0d1425: CVD dE 26.8, normal dE 31.8, >= 3:1. */
+  /* Màu dùng trong biểu đồ. Hai chuỗi dữ liệu dùng ô màu phân loại số 1-2 (bản cho nền tối), đã kiểm tra bằng
+     công cụ kiểm màu của dataviz trên nền thẻ #0d1425: mù màu dE 26.8, thị lực thường dE 31.8, tương phản >= 3:1. */
   --series-tpe: #3987e5;
   --series-rs: #d95926;
   --series-tpe-track: rgba(57, 135, 229, 0.2);
@@ -49,7 +49,7 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Base & Reset */
+/* Cơ bản & reset */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -67,7 +67,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Ambient Background Glow */
+/* Quầng sáng nền xung quanh */
 .bg-glow {
   position: fixed;
   border-radius: 50%;
@@ -92,7 +92,7 @@ body {
   right: 10%;
 }
 
-/* Header (scrolls away; the step nav below stays pinned) */
+/* Header (cuộn khuất theo trang; thanh điều hướng theo bước bên dưới thì được ghim) */
 .app-header {
   position: relative;
   z-index: 10;
@@ -205,7 +205,7 @@ body {
   background: rgba(14, 165, 233, 0.08);
 }
 
-/* Step navigation: the demo order of the course guide, pinned while scrolling */
+/* Thanh điều hướng theo bước: thứ tự demo theo hướng dẫn của môn học, được ghim khi cuộn */
 .step-nav {
   position: sticky;
   top: 0;
@@ -278,7 +278,7 @@ body {
   color: var(--bg-abyss);
 }
 
-/* Main Container */
+/* Khung chứa chính */
 .main-container {
   max-width: 1360px;
   margin: 28px auto 40px auto;
@@ -287,7 +287,7 @@ body {
   z-index: 10;
 }
 
-/* Story sections (one per demo step) */
+/* Các section theo mạch trình bày (mỗi bước demo một section) */
 .story-section {
   margin-bottom: 48px;
   scroll-margin-top: calc(var(--nav-height) + 16px);
@@ -326,7 +326,7 @@ body {
   max-width: 80ch;
 }
 
-/* 1. Problem formulation */
+/* 1. Phát biểu bài toán */
 .formula-bar {
   display: flex;
   flex-wrap: wrap;
@@ -440,7 +440,7 @@ body {
   color: var(--text-main);
 }
 
-/* 2. Stat tiles */
+/* 2. Ô thống kê */
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
@@ -514,7 +514,7 @@ body {
   white-space: nowrap;
 }
 
-/* Legend keys: line for lines, dot for points, ring for the selection marker */
+/* Ký hiệu trong legend: đoạn thẳng cho đường, chấm cho điểm, vòng tròn cho dấu đang chọn */
 .legend {
   list-style: none;
   display: flex;
@@ -561,7 +561,7 @@ body {
 .key-dot.key-rs { background: var(--series-rs); }
 .key-line.key-pareto { background: var(--text-muted); }
 
-/* Chart cards */
+/* Thẻ biểu đồ */
 .chart-card {
   display: flex;
   flex-direction: column;
@@ -717,7 +717,7 @@ body {
   fill: var(--text-main);
 }
 
-/* Surface halo keeps the selection ring readable on top of same-colored points */
+/* Quầng màu nền (surface) giúp vòng chọn vẫn dễ nhìn khi nằm trên các điểm cùng màu */
 .chart-svg .sel-ring {
   fill: none;
   stroke-width: 2.5;
@@ -728,7 +728,7 @@ body {
 .chart-svg .sel-tpe { stroke: var(--series-tpe); }
 .chart-svg .sel-rs { stroke: var(--series-rs); }
 
-/* Tooltip: value leads, label follows; line keys, not boxes */
+/* Tooltip: giá trị đứng trước, nhãn theo sau; ký hiệu dạng đoạn thẳng, không dùng ô vuông */
 .chart-tooltip {
   position: absolute;
   z-index: 5;
@@ -785,7 +785,7 @@ body {
 .tip-status.is-ok { color: var(--status-green); }
 .tip-status.is-bad { color: var(--status-red); }
 
-/* Table views (the accessible twin of each chart) */
+/* Dạng xem bảng (bản song song dễ tiếp cận của mỗi biểu đồ) */
 .table-view summary {
   cursor: pointer;
   font-size: 12.5px;
@@ -863,7 +863,7 @@ body {
   background: rgba(14, 165, 233, 0.08);
 }
 
-/* 3. Epsilon control (one filter row above the content it scopes) */
+/* 3. Bộ chọn epsilon (một hàng bộ lọc nằm trên phần nội dung mà nó áp dụng) */
 .filter-row {
   display: flex;
   align-items: center;
@@ -1019,7 +1019,7 @@ body {
   border-left: 3px solid var(--accent-azure);
 }
 
-/* No uppercase where ε appears: text-transform turns it into a capital epsilon that reads as "E". */
+/* Không viết hoa chỗ có ε: text-transform biến nó thành epsilon hoa, trông giống chữ "E". */
 .header-badge.badge-plain {
   text-transform: none;
   letter-spacing: 0.2px;
@@ -1088,7 +1088,7 @@ body {
   max-width: 110ch;
 }
 
-/* Scenario Presets */
+/* Kịch bản dựng sẵn (preset) */
 .presets-section {
   background: var(--bg-card);
   backdrop-filter: blur(16px);
@@ -1169,9 +1169,9 @@ body {
   box-shadow: 0 0 14px rgba(14, 165, 233, 0.3);
 }
 
-/* Dashboard Grid Layout */
-/* minmax(0, ...) lets columns shrink below their content's min-content width;
-   plain 1fr made the wide table push the whole page past the viewport on phones. */
+/* Bố cục lưới của dashboard */
+/* minmax(0, ...) cho phép cột co nhỏ hơn độ rộng min-content của nội dung;
+   chỉ dùng 1fr thì bảng rộng đẩy cả trang tràn ra ngoài viewport trên điện thoại. */
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
@@ -1191,7 +1191,7 @@ body {
   min-width: 0;
 }
 
-/* Card Styling */
+/* Kiểu dáng thẻ */
 .card {
   background: var(--bg-card);
   backdrop-filter: blur(16px);
@@ -1281,7 +1281,7 @@ code {
   color: var(--text-dim);
 }
 
-/* Form & Sliders */
+/* Form & thanh trượt */
 .controls-form {
   display: flex;
   flex-direction: column;
@@ -1319,7 +1319,7 @@ code {
   border: 1px solid rgba(14, 165, 233, 0.2);
 }
 
-/* Range Slider Styling */
+/* Kiểu dáng thanh trượt (range) */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -1366,7 +1366,7 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
-/* Derived (read-only) humidity */
+/* Độ ẩm tự tính (chỉ đọc) */
 .derived-chip {
   font-size: 9.5px;
   font-weight: 700;
@@ -1413,7 +1413,7 @@ button:focus-visible {
   color: var(--text-dim);
 }
 
-/* Select Dropdowns */
+/* Danh sách thả xuống (select) */
 .control-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1443,14 +1443,14 @@ select:focus {
   border-color: var(--accent-azure);
 }
 
-/* Right Panel: Instruments */
+/* Khung bên phải: các công cụ đo */
 .panel-instruments {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-/* Prediction Card */
+/* Thẻ dự báo */
 .card-prediction {
   background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(2, 44, 80, 0.6) 100%);
   border: 1px solid rgba(14, 165, 233, 0.35);
@@ -1552,7 +1552,7 @@ select:focus {
   color: var(--accent-azure);
 }
 
-/* Dynamic Alert Banner */
+/* Banner cảnh báo động */
 .alert-banner {
   display: flex;
   align-items: flex-start;
@@ -1621,7 +1621,7 @@ select:focus {
   line-height: 1.4;
 }
 
-/* Latency Hardware Gauge */
+/* Đồng hồ đo độ trễ phần cứng */
 .feasibility-badge {
   color: var(--text-muted);
   border: 1px solid var(--border-subtle);
@@ -1721,7 +1721,7 @@ select:focus {
   font-weight: 600;
 }
 
-/* Latency Breakdown Progress Bars */
+/* Thanh tiến trình phân rã độ trễ */
 .latency-breakdown {
   display: flex;
   flex-direction: column;
@@ -1784,7 +1784,7 @@ select:focus {
   line-height: 1.45;
 }
 
-/* Benchmark Card */
+/* Thẻ benchmark */
 .card-benchmark {
   background: rgba(15, 23, 42, 0.6);
   border: 1px dashed rgba(255, 255, 255, 0.15);
@@ -1900,7 +1900,7 @@ select:focus {
 .text-muted { color: var(--text-muted); }
 .text-sm { font-size: 12px; }
 
-/* Error notice */
+/* Thông báo lỗi */
 .notice {
   border-radius: 12px;
   padding: 12px 16px;
@@ -1918,7 +1918,7 @@ select:focus {
   color: #fecaca;
 }
 
-/* Multi-Model Table Section */
+/* Phần bảng nhiều mô hình */
 .section-benchmark-table {
   margin-top: 10px;
 }
@@ -2021,7 +2021,7 @@ select:focus {
   box-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
 }
 
-/* Footer */
+/* Chân trang */
 .app-footer {
   border-top: 1px solid var(--border-subtle);
   background: rgba(7, 11, 20, 0.7);
@@ -2040,7 +2040,7 @@ select:focus {
   gap: 4px;
 }
 
-/* Responsive header */
+/* Header cho màn hình hẹp */
 @media (max-width: 768px) {
   .header-container {
     flex-direction: column;
@@ -2075,7 +2075,7 @@ select:focus {
     font-size: 13px;
   }
 
-  /* Five epsilon levels share one row instead of wrapping the last one */
+  /* Năm mức epsilon nằm chung một hàng thay vì để mức cuối rớt xuống dòng */
   .segmented {
     display: flex;
     flex-wrap: nowrap;

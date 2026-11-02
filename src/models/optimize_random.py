@@ -1,14 +1,14 @@
 """
-Baseline Optimization Module: Constrained Random Search.
+Module tối ưu baseline: Random Search có ràng buộc.
 
-Searches decision variables x = (L, theta) over a bounded space:
-    - L: Historical window length in hours
-    - theta: LightGBM hyperparameters
-Objective: Minimize Validation RMSE subject to P95 End-to-End Latency <= 5.0 ms.
-Budget: Default 100 trials per seed across 5 random seeds (total 500 evaluations for RQ2 scaling);
-        can be set to 40 trials per seed (200 evaluations) for RQ1 fair budget comparison.
-Search cost: every logged trial records trial_time_s (wall-clock seconds for sampling, training,
-        validation and the latency benchmark).
+Tìm biến quyết định x = (L, theta) trên một không gian tìm kiếm có giới hạn:
+    - L: Độ dài cửa sổ lịch sử tính theo giờ
+    - theta: Các siêu tham số của LightGBM
+Hàm mục tiêu: cực tiểu hóa RMSE trên tập Val với ràng buộc độ trễ end-to-end P95 <= 5.0 ms.
+Ngân sách: mặc định 100 trial/seed với 5 seed ngẫu nhiên (tổng 500 lượt đánh giá, RQ2 - mở rộng ngân sách);
+        có thể đặt 40 trial/seed (200 lượt đánh giá) để so sánh công bằng cùng ngân sách cho RQ1.
+Chi phí tìm kiếm: mỗi trial trong log đều ghi trial_time_s (số giây thực tế cho lấy mẫu, huấn luyện,
+        đánh giá trên tập Val và benchmark độ trễ).
 """
 
 import argparse
@@ -19,7 +19,7 @@ import sys
 import time
 from typing import List, Dict, Any, Tuple
 
-# Ensure project root is in sys.path
+# Đảm bảo thư mục gốc của dự án có trong sys.path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -41,7 +41,7 @@ from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRA
 RESULTS_DIR = Path("results")
 OUTPUT_CSV = RESULTS_DIR / "optimization_history_random.csv"
 
-# Pre-defined search space
+# Không gian tìm kiếm định nghĩa sẵn
 WINDOW_CANDIDATES = [1, 2, 3, 6, 12, 24, 36, 48, 72]
 DEFAULT_SEEDS = [42, 123, 456, 789, 2026]
 
@@ -51,8 +51,8 @@ _SPLIT_CACHE: Dict[Tuple[int, int], Tuple[List[str], Tuple, Tuple]] = {}
 
 def get_train_val_split(clean_df: pd.DataFrame, L: int):
     """
-    Return (feature_cols, (X_train, y_train), (X_val, y_val)) for window L, memoized per (data, L).
-    Feature construction is deterministic in L, so rebuilding it on every trial is wasted work.
+    Trả về (feature_cols, (X_train, y_train), (X_val, y_val)) cho cửa sổ L, lưu đệm theo từng cặp (data, L).
+    Việc tạo đặc trưng là tất định theo L, nên tạo lại ở mỗi trial chỉ tốn công vô ích.
     """
     key = (id(clean_df), L)
     if key not in _SPLIT_CACHE:
@@ -63,9 +63,9 @@ def get_train_val_split(clean_df: pd.DataFrame, L: int):
 
 
 def sample_random_configuration(seed: int) -> Dict[str, Any]:
-    """Sample a random candidate solution x = (L, theta) using identical prior distribution as Optuna."""
+    """Lấy mẫu ngẫu nhiên một nghiệm ứng viên x = (L, theta) với cùng phân phối tiên nghiệm như Optuna."""
     rng = random.Random(seed)
-    # Log-uniform sampling for learning_rate in [0.01, 0.25] to match Optuna log=True exactly
+    # Lấy mẫu log-uniform cho learning_rate trong [0.01, 0.25] để khớp chính xác với log=True của Optuna
     log_lr = rng.uniform(math.log(0.01), math.log(0.25))
     lr = round(math.exp(log_lr), 4)
 
@@ -85,14 +85,14 @@ def evaluate_candidate(
     eval_seed: int = 42,
 ) -> Dict[str, Any]:
     """
-    Train model on candidate configuration and evaluate Validation error and Latency.
+    Huấn luyện mô hình với cấu hình ứng viên rồi đánh giá sai số trên tập Val và độ trễ.
     """
     L = config["L"]
 
-    # 1. Feature extraction (cached per L)
+    # 1. Trích xuất đặc trưng (lưu đệm theo L)
     fcols, (X_tr, y_tr), (X_v, y_v) = get_train_val_split(clean_df, L)
 
-    # 2. Train LightGBM model
+    # 2. Huấn luyện mô hình LightGBM
     model = lgb.LGBMRegressor(
         n_estimators=config["n_estimators"],
         max_depth=config["max_depth"],
@@ -105,12 +105,12 @@ def evaluate_candidate(
     )
     model.fit(X_tr, y_tr)
 
-    # 3. Validation Performance
+    # 3. Hiệu năng trên tập Val
     y_val_pred = model.predict(X_v)
     val_rmse = float(root_mean_squared_error(y_v, y_val_pred))
     val_mae = float(mean_absolute_error(y_v, y_val_pred))
 
-    # 4. End-to-End Latency Measurement strictly on Validation slice (0% contact with Test set)
+    # 4. Đo độ trễ end-to-end chỉ trên phần dữ liệu của tập Val (hoàn toàn không chạm vào tập Test)
     val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
     raw_window = val_slice.iloc[-L:]
     lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=200, warmup=20)
@@ -132,7 +132,7 @@ def evaluate_candidate(
 
 
 def run_random_search(n_trials: int = 40, seeds: List[int] = DEFAULT_SEEDS) -> pd.DataFrame:
-    """Execute baseline Random Search across specified trials and seeds."""
+    """Chạy Random Search baseline với số trial và các seed được chỉ định."""
     print("=" * 65)
     print("STARTING BASELINE OPTIMIZATION: CONSTRAINED RANDOM SEARCH")
     print(f"Budget: {n_trials} trials/seed across {len(seeds)} seeds (Total: {n_trials * len(seeds)} evaluations)")
@@ -157,10 +157,10 @@ def run_random_search(n_trials: int = 40, seeds: List[int] = DEFAULT_SEEDS) -> p
             result["trial"] = trial
             result["seed"] = seed
             result["method"] = "RandomSearch"
-            # Search cost; the first trial per L also pays for the (cached) feature build
+            # Chi phí tìm kiếm; trial đầu tiên của mỗi L còn tính cả thời gian tạo đặc trưng (được lưu đệm)
             result["trial_time_s"] = round(elapsed, 3)
 
-            # Check feasibility and track best-so-far
+            # Kiểm tra tính khả thi và theo dõi kết quả tốt nhất đến hiện tại
             feasible_str = "FEASIBLE" if result["is_feasible"] else "VIOLATED"
             if result["is_feasible"] and result["val_rmse"] < best_val_rmse:
                 best_val_rmse = result["val_rmse"]

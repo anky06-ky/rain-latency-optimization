@@ -1,9 +1,9 @@
 """
-Standalone Model Training Script.
+Script huấn luyện mô hình chạy độc lập.
 
-Trains a LightGBM regressor on the training split (2023-01 to 2024-12)
-using specified or optimal hyperparameters, and reports metrics across splits.
-Saves model artifact to models/best_optuna_lgb.joblib.
+Huấn luyện mô hình hồi quy LightGBM trên tập Train (2023-01 đến 2024-12)
+với bộ siêu tham số được chỉ định hoặc bộ tối ưu, rồi báo cáo các chỉ số trên từng tập.
+Lưu artifact mô hình vào models/best_optuna_lgb.joblib.
 """
 
 import argparse
@@ -16,7 +16,7 @@ import pandas as pd
 import lightgbm as lgb
 from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
 
-# Ensure project root is in sys.path
+# Đảm bảo thư mục gốc của dự án có trong sys.path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -65,7 +65,7 @@ def main():
     )
     model.fit(X_tr, y_tr)
 
-    # Compute metrics across splits
+    # Tính các chỉ số trên từng tập
     splits = [("Train (2023-2024)", X_tr, y_tr), ("Validation (2025-H1)", X_v, y_v), ("Test (2025-H2)", X_te, y_te)]
     print("\n--- Model Evaluation Across Chronological Splits ---")
     metrics_report = {}
@@ -77,19 +77,19 @@ def main():
         metrics_report[name] = {"rmse": round(rmse, 4), "mae": round(mae, 4), "r2": round(r2, 4)}
         print(f"{name:>22}: RMSE = {rmse:.4f} mm/h | MAE = {mae:.4f} mm/h | R^2 = {r2:.4f}")
 
-    # Latency benchmark strictly on Validation slice
+    # Benchmark độ trễ chỉ trên phần dữ liệu của tập Val
     val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
     raw_window = val_slice.iloc[-args.L:]
     lat_res = benchmark_end_to_end_latency(model, raw_window, L=args.L, n_runs=200, warmup=20)
     print(f"\nEnd-to-End Latency P95: {lat_res['p95_latency_ms']:.3f} ms (Budget <= {LATENCY_CONSTRAINT_MS} ms) -> Feasible: {lat_res['is_feasible']}")
 
-    # Save model artifact
+    # Lưu artifact mô hình
     save_path = Path(args.save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, save_path)
     print(f"\n[+] Saved model artifact to: {save_path}")
 
-    # Save metadata JSON
+    # Lưu metadata ra file JSON
     meta_path = save_path.with_suffix(".json")
     meta = {
         "model_type": "LightGBMRegressor",

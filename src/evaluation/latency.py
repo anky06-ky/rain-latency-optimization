@@ -1,15 +1,15 @@
 """
-Inference Latency Evaluation Module.
+Module đánh giá độ trễ suy luận.
 
-Measures single-sample End-to-End Inference Latency:
+Đo độ trễ suy luận end-to-end trên một mẫu đơn:
     T_e2e = T_feature_transform(L) + T_predict(model)
-Evaluates compliance with the project constraint: T_e2e <= 5.0 ms
-(and the internal safety margin: T_e2e <= 4.5 ms).
+Đánh giá việc tuân thủ ràng buộc của dự án: T_e2e <= 5.0 ms
+(và biên an toàn nội bộ: T_e2e <= 4.5 ms).
 
-Measurement protocol: `warmup` untimed calls, then `n_runs` timed calls with Python GC paused;
-feasibility is judged on the P95 of those runs. Uses model.booster_.predict on NumPy when available.
-History: the logged search runs (results/optimization_history_*.csv, commit 1da4ab6) were measured
-with the scikit-learn wrapper model.predict, which is slower than the current path.
+Quy trình đo: `warmup` lần gọi không bấm giờ, rồi `n_runs` lần gọi có bấm giờ khi GC của Python tạm dừng;
+tính khả thi được xét trên P95 của các lần đo đó. Dùng model.booster_.predict trên NumPy nếu có.
+Lịch sử: các lượt tìm kiếm đã ghi log (results/optimization_history_*.csv, commit 1da4ab6) được đo
+bằng wrapper scikit-learn model.predict, vốn chậm hơn đường suy luận hiện tại.
 """
 
 import gc
@@ -31,32 +31,32 @@ def benchmark_end_to_end_latency(
     warmup: int = 20,
 ) -> Dict[str, float]:
     """
-    Measure end-to-end inference latency on a single-sample request:
+    Đo độ trễ suy luận end-to-end cho một yêu cầu gồm một mẫu đơn:
         T_e2e = T_feature_transform(L) + T_predict(model)
     
-    Parameters:
-        model: Fitted estimator supporting .predict(X) or .booster_.predict(X).
-        raw_window_slice: DataFrame containing the last L hourly weather observations.
-        L: Window length in hours.
-        n_runs: Number of timed repetitions.
-        warmup: Number of untimed warmup runs to prime CPU caches.
+    Tham số:
+        model: Mô hình đã huấn luyện, hỗ trợ .predict(X) hoặc .booster_.predict(X).
+        raw_window_slice: DataFrame chứa L quan trắc thời tiết theo giờ gần nhất.
+        L: Độ dài cửa sổ, tính bằng giờ.
+        n_runs: Số lần lặp có bấm giờ.
+        warmup: Số lần chạy warmup không bấm giờ, để làm nóng cache CPU.
         
-    Returns:
-        Dictionary with latency metrics:
-            - 'mean_latency_ms': Average latency in milliseconds.
-            - 'p95_latency_ms': 95th percentile latency in milliseconds.
-            - 'p99_latency_ms': 99th percentile latency in milliseconds.
-            - 'is_feasible': Boolean indicating whether p95_latency_ms <= 5.0 ms.
+    Trả về:
+        Dict chứa các chỉ số độ trễ:
+            - 'mean_latency_ms': Độ trễ trung bình, tính bằng mili giây.
+            - 'p95_latency_ms': Độ trễ phân vị thứ 95, tính bằng mili giây.
+            - 'p99_latency_ms': Độ trễ phân vị thứ 99, tính bằng mili giây.
+            - 'is_feasible': Giá trị boolean cho biết p95_latency_ms <= 5.0 ms hay không.
     """
     predict_fn = model.booster_.predict if hasattr(model, "booster_") else model.predict
 
-    # 1. Warmup runs (prime cache, JIT, OpenMP threadpool)
+    # 1. Các lần chạy warmup (làm nóng cache, JIT, threadpool của OpenMP)
     for _ in range(warmup):
         feat = extract_single_sample_features(raw_window_slice, L)
         _ = predict_fn(feat)
 
-    # 2. Precision benchmarking. Garbage collection is paused (as timeit does) so that GC pauses
-    #    triggered by allocations elsewhere in the process do not land in the P95 tail.
+    # 2. Đo chính xác. Tạm dừng bộ thu gom rác (như timeit vẫn làm) để các lần dừng do GC, phát sinh
+    #    từ việc cấp phát bộ nhớ ở nơi khác trong tiến trình, không rơi vào đuôi P95.
     latencies_arr = np.empty(n_runs, dtype=np.float64)
     gc_was_enabled = gc.isenabled()
     gc.disable()

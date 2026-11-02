@@ -1,16 +1,16 @@
 """
-Feature Engineering Module (single source of truth for features, offline and online).
+Module xây dựng đặc trưng (nguồn định nghĩa duy nhất cho đặc trưng, dùng chung cho offline và online).
 
-- load_clean_weather_data: Quality Gate (2023-2025) + strictly causal imputation.
-- build_features: batch lag / rolling / cyclical features for window L, target y_{t+1}.
-  Note: rows are dropped (lag warm-up, missing targets) and the result is RE-INDEXED, so its
-  index does not align with the clean DataFrame; look up timestamps via its 'time' / 'target_time'.
-- split_time_series: chronological Train / Validation / Test split by target_time.
-- extract_single_sample_features / extract_features_from_array: online single-sample extractors,
-  bit-for-bit parity with build_features (see tests/test_pipeline.py).
+- load_clean_weather_data: cổng kiểm soát chất lượng (2023-2025) + điền khuyết nhân quả nghiêm ngặt.
+- build_features: tạo theo lô đặc trưng trễ / thống kê trượt / chu kỳ sin/cos cho cửa sổ L, mục tiêu y_{t+1}.
+  Lưu ý: một số dòng bị loại (warm-up của đặc trưng trễ, thiếu mục tiêu) và kết quả được ĐÁNH LẠI CHỈ MỤC,
+  nên chỉ mục không khớp với DataFrame sạch; hãy tra mốc thời gian qua cột 'time' / 'target_time' của nó.
+- split_time_series: chia tập Train / Val / Test theo trình tự thời gian dựa trên target_time.
+- extract_single_sample_features / extract_features_from_array: bộ trích xuất online cho một mẫu đơn,
+  khớp từng bit với build_features (xem tests/test_pipeline.py).
 
-Feature count: 6*L lags + 5 rolling stats (only if L >= 3) + 4 cyclical encodings
-(L=1 -> 10 features, L=6 -> 45 features).
+Số đặc trưng: 6*L đặc trưng trễ + 5 thống kê trượt (chỉ khi L >= 3) + 4 mã hóa chu kỳ sin/cos
+(L=1 -> 10 đặc trưng, L=6 -> 45 đặc trưng).
 """
 
 import math
@@ -23,18 +23,18 @@ import pandas as pd
 RAW_DATA_PATH = Path("data/raw/weather_meteostat_2021_2026.csv")
 PROCESSED_DATA_DIR = Path("data/processed")
 
-# Base physical meteorological parameters
+# Các thông số khí tượng vật lý cơ bản
 BASE_NUMERIC_COLS = ["temp", "dwpt", "rhum", "pres", "wspd"]
-# Raw per-hour inputs used to build lag features (order defines feature column order)
+# Đầu vào thô theo từng giờ dùng để tạo đặc trưng trễ (thứ tự này quyết định thứ tự cột đặc trưng)
 RAW_WINDOW_COLS = BASE_NUMERIC_COLS + ["prcp_clean"]
 
 
 def load_clean_weather_data(filepath: Path = RAW_DATA_PATH) -> pd.DataFrame:
     """
-    Load raw Meteostat CSV and apply Quality Gate filtering (2023-2025).
-    Uses strictly past-only / causal imputation to prevent future data leakage:
-    - Continuous physical variables (temp, dwpt, rhum, pres, wspd): forward-fill up to 2 hours.
-    - Precipitation: forward-fill short gaps up to 1 hour, remaining missing treated as 0.0 for feature lagging.
+    Đọc file CSV thô của Meteostat và lọc qua cổng kiểm soát chất lượng (2023-2025).
+    Dùng điền khuyết nhân quả nghiêm ngặt (chỉ dùng quá khứ) để tránh rò rỉ dữ liệu tương lai:
+    - Các biến vật lý liên tục (temp, dwpt, rhum, pres, wspd): điền tiến (ffill) tối đa 2 giờ.
+    - Lượng mưa: điền tiến khoảng trống ngắn tối đa 1 giờ, phần còn thiếu coi là 0.0 khi tạo đặc trưng trễ.
     """
     if not filepath.exists():
         raise FileNotFoundError(f"Raw data file not found: {filepath}. Run 'python src/data/download.py' first.")
@@ -42,15 +42,15 @@ def load_clean_weather_data(filepath: Path = RAW_DATA_PATH) -> pd.DataFrame:
     df = pd.read_csv(filepath)
     df["time"] = pd.to_datetime(df["time"])
 
-    # Quality Gate: Filter clean period (2023-01-01 to 2025-12-31)
+    # Cổng kiểm soát chất lượng: lọc giai đoạn dữ liệu sạch (2023-01-01 đến 2025-12-31)
     df = df[(df["time"] >= "2023-01-01") & (df["time"] <= "2025-12-31 23:59:59")].copy()
     df = df.sort_values("time").reset_index(drop=True)
 
-    # Strictly causal forward-fill for continuous weather variables (no future values accessed)
+    # Điền tiến (ffill) nhân quả nghiêm ngặt cho các biến thời tiết liên tục (không dùng giá trị tương lai)
     df[BASE_NUMERIC_COLS] = df[BASE_NUMERIC_COLS].ffill(limit=2)
 
-    # Clean precipitation for feature lagging: past-only forward-fill (limit=1), remainder as 0.0
-    # Note: ground-truth target is derived from raw df['prcp'] before fillna, and missing targets are dropped
+    # Làm sạch lượng mưa để tạo đặc trưng trễ: điền tiến chỉ dùng quá khứ (limit=1), phần còn lại gán 0.0
+    # Lưu ý: giá trị mục tiêu thực tế lấy từ df['prcp'] thô trước fillna; mục tiêu bị thiếu sẽ bị loại bỏ
     df["prcp_clean"] = df["prcp"].ffill(limit=1).fillna(0.0)
 
     return df
@@ -58,37 +58,37 @@ def load_clean_weather_data(filepath: Path = RAW_DATA_PATH) -> pd.DataFrame:
 
 def build_features(df: pd.DataFrame, L: int = 6) -> Tuple[pd.DataFrame, List[str]]:
     """
-    Construct lag, rolling, and cyclical features for a given historical window length L.
+    Tạo các đặc trưng trễ, thống kê trượt và mã hóa chu kỳ sin/cos với độ dài cửa sổ lịch sử L cho trước.
     
-    Parameters:
-        df: Clean hourly DataFrame.
-        L: Historical window length in hours (L in [1, 72]).
+    Tham số:
+        df: DataFrame theo giờ đã làm sạch.
+        L: Độ dài cửa sổ lịch sử tính theo giờ (L thuộc [1, 72]).
         
-    Returns:
-        df_features: DataFrame containing features, 'target' (y_t+1), 'time', and 'target_time'.
-        feature_cols: List of feature column names.
+    Trả về:
+        df_features: DataFrame chứa các đặc trưng, 'target' (y_t+1), 'time' và 'target_time'.
+        feature_cols: Danh sách tên các cột đặc trưng.
     """
     if L < 1:
         raise ValueError("Window length L must be at least 1.")
 
     data_dict = {}
 
-    # Target: 1 hour ahead precipitation (y_t+1)
+    # Mục tiêu: lượng mưa của 1 giờ tới (y_t+1)
     data_dict["target"] = df["prcp"].shift(-1)
     data_dict["time"] = df["time"]
-    # Explicit target timestamp to eliminate boundary leakage
+    # Mốc thời gian mục tiêu tường minh để loại bỏ rò rỉ dữ liệu tại ranh giới chia tập
     data_dict["target_time"] = df["time"] + pd.to_timedelta(1, unit="h")
 
     feature_cols = []
 
-    # 1. Lag features: values from t (lag 0) back to t-(L-1) (lag L-1)
+    # 1. Đặc trưng trễ: giá trị từ t (lag 0) lùi về t-(L-1) (lag L-1)
     for lag in range(L):
         for col in RAW_WINDOW_COLS:
             col_name = f"{col}_lag_{lag}" if col != "prcp_clean" else f"prcp_lag_{lag}"
             data_dict[col_name] = df[col].shift(lag)
             feature_cols.append(col_name)
 
-    # 2. Rolling window statistics over window L (for L >= 3)
+    # 2. Thống kê trượt trên cửa sổ L (khi L >= 3)
     if L >= 3:
         rolling_prcp = df["prcp_clean"].rolling(window=L)
         data_dict[f"prcp_rolling_mean_{L}"] = rolling_prcp.mean()
@@ -106,7 +106,7 @@ def build_features(df: pd.DataFrame, L: int = 6) -> Tuple[pd.DataFrame, List[str
             f"rhum_rolling_mean_{L}",
         ])
 
-    # 3. Cyclical temporal encodings (Hour of day and Month of year)
+    # 3. Mã hóa chu kỳ sin/cos theo thời gian (giờ trong ngày và tháng trong năm)
     hour = df["time"].dt.hour
     month = df["time"].dt.month
     data_dict["sin_hour"] = np.sin(2 * np.pi * hour / 24.0)
@@ -116,10 +116,10 @@ def build_features(df: pd.DataFrame, L: int = 6) -> Tuple[pd.DataFrame, List[str
 
     feature_cols.extend(["sin_hour", "cos_hour", "sin_month", "cos_month"])
 
-    # Combine into DataFrame
+    # Gộp thành DataFrame
     df_feat = pd.DataFrame(data_dict)
 
-    # Drop any row with NaN in features (lag warm-up) or NaN in target (missing ground truth)
+    # Bỏ mọi dòng có NaN ở đặc trưng (warm-up của đặc trưng trễ) hoặc NaN ở mục tiêu (thiếu giá trị thực tế)
     df_feat = df_feat.dropna(subset=feature_cols + ["target"]).reset_index(drop=True)
 
     return df_feat, feature_cols
@@ -131,10 +131,10 @@ def split_time_series(df_feat: pd.DataFrame, feature_cols: List[str]) -> Tuple[
     Tuple[pd.DataFrame, pd.Series],
 ]:
     """
-    Split time series chronologically by target_time to eliminate boundary leakage:
-    - Train: target_time <= 2024-12-31 23:59:59 (features up to 22:00 predicting 23:00)
-    - Validation: 2025-01-01 00:00:00 <= target_time <= 2025-06-30 23:59:59
-    - Test: 2025-07-01 00:00:00 <= target_time <= 2025-12-31 23:59:59
+    Chia chuỗi thời gian theo trình tự của target_time để loại bỏ rò rỉ dữ liệu tại ranh giới chia tập:
+    - Tập Train: target_time <= 2024-12-31 23:59:59 (đặc trưng đến 22:00 để dự báo 23:00)
+    - Tập Val: 2025-01-01 00:00:00 <= target_time <= 2025-06-30 23:59:59
+    - Tập Test: 2025-07-01 00:00:00 <= target_time <= 2025-12-31 23:59:59
     """
     train_mask = (df_feat["target_time"] >= "2023-01-01 01:00:00") & (df_feat["target_time"] <= "2024-12-31 23:59:59")
     val_mask = (df_feat["target_time"] >= "2025-01-01 00:00:00") & (df_feat["target_time"] <= "2025-06-30 23:59:59")
@@ -153,10 +153,10 @@ def split_time_series(df_feat: pd.DataFrame, feature_cols: List[str]) -> Tuple[
 
 def extract_features_from_array(arr: np.ndarray, hour: int, month: int, L: int) -> np.ndarray:
     """
-    Fast-path single-sample feature extractor operating on a raw NumPy buffer.
-    Input: float array of shape (L, 6) with columns RAW_WINDOW_COLS, oldest row first,
-           plus the hour/month of the latest observation (time t).
-    Output: 2D float32 array of shape (1, num_features_D), column order identical to build_features.
+    Bộ trích xuất đặc trưng cho một mẫu đơn (đường xử lý nhanh), làm việc trên bộ đệm NumPy thô.
+    Đầu vào: mảng float kích thước (L, 6) với các cột RAW_WINDOW_COLS, dòng cũ nhất đứng đầu,
+             cùng giờ/tháng của quan trắc mới nhất (thời điểm t).
+    Đầu ra: mảng float32 2 chiều kích thước (1, num_features_D), thứ tự cột giống hệt build_features.
     """
     if arr.shape != (L, len(RAW_WINDOW_COLS)):
         raise ValueError(f"Expected window of shape ({L}, {len(RAW_WINDOW_COLS)}), got {arr.shape}")
@@ -164,22 +164,22 @@ def extract_features_from_array(arr: np.ndarray, hour: int, month: int, L: int) 
     n_rolling = 5 if L >= 3 else 0
     out = np.empty((1, L * len(RAW_WINDOW_COLS) + n_rolling + 4), dtype=np.float32)
 
-    # Lags from lag 0 (latest, row L-1) down to lag L-1 (oldest, row 0)
-    # Row reversal arr[::-1] followed by flatten matches build_features column order exactly
+    # Các giá trị trễ từ lag 0 (mới nhất, dòng L-1) đến lag L-1 (cũ nhất, dòng 0)
+    # Đảo thứ tự dòng bằng arr[::-1] rồi làm phẳng sẽ khớp chính xác thứ tự cột của build_features
     n_lag = L * len(RAW_WINDOW_COLS)
     out[0, :n_lag] = arr[::-1].ravel()
 
-    # Rolling statistics (for L >= 3)
+    # Thống kê trượt (khi L >= 3)
     if n_rolling:
         prcp_series = arr[:, 5]
         out[0, n_lag] = prcp_series.mean()
         out[0, n_lag + 1] = prcp_series.max()
-        # Use ddof=1 to match pandas rolling().std() in build_features exactly
+        # Dùng ddof=1 để khớp chính xác với pandas rolling().std() trong build_features
         out[0, n_lag + 2] = prcp_series.std(ddof=1)
         out[0, n_lag + 3] = arr[:, 0].mean()
         out[0, n_lag + 4] = arr[:, 2].mean()
 
-    # Cyclic time features from current timestamp (time t); math.* is cheaper than np.* on scalars
+    # Mã hóa chu kỳ sin/cos từ mốc thời gian hiện tại (thời điểm t); math.* rẻ hơn np.* với số vô hướng
     out[0, -4] = math.sin(2.0 * math.pi * hour / 24.0)
     out[0, -3] = math.cos(2.0 * math.pi * hour / 24.0)
     out[0, -2] = math.sin(2.0 * math.pi * month / 12.0)
@@ -190,12 +190,12 @@ def extract_features_from_array(arr: np.ndarray, hour: int, month: int, L: int) 
 
 def extract_single_sample_features(raw_window_slice: pd.DataFrame, L: int) -> np.ndarray:
     """
-    Vectorized feature extractor for single-sample end-to-end latency measurement.
-    Input: DataFrame of shape (L, num_features) representing the last L hours up to time t.
-    Output: 2D numpy array of shape (1, num_features_D).
+    Bộ trích xuất đặc trưng vector hóa, dùng để đo độ trễ end-to-end trên một mẫu đơn.
+    Đầu vào: DataFrame kích thước (L, num_features) biểu diễn L giờ gần nhất tính đến thời điểm t.
+    Đầu ra: mảng NumPy 2 chiều kích thước (1, num_features_D).
     """
-    # Pull each column's backing array directly; selecting a column subset (df[[...]]) builds a new
-    # DataFrame per call and dominated single-sample latency.
+    # Lấy trực tiếp mảng dữ liệu nền của từng cột; chọn một tập con cột (df[[...]]) sẽ tạo DataFrame mới
+    # ở mỗi lần gọi và từng chiếm phần lớn độ trễ khi xử lý một mẫu đơn.
     arr = np.column_stack([raw_window_slice[c].to_numpy(dtype=np.float32) for c in RAW_WINDOW_COLS])
     curr_time = raw_window_slice["time"].iloc[-1]
     return extract_features_from_array(arr, curr_time.hour, curr_time.month, L)
@@ -209,13 +209,13 @@ if __name__ == "__main__":
     clean_df = load_clean_weather_data()
     print(f"[+] Loaded clean weather data: {len(clean_df):,} rows.")
 
-    # Demonstration with L = 6 and L = 72
+    # Minh họa với L = 3, 6, 24 và 72
     for test_L in [3, 6, 24, 72]:
         df_feat, fcols = build_features(clean_df, L=test_L)
         (X_tr, y_tr), (X_v, y_v), (X_te, y_te) = split_time_series(df_feat, fcols)
         print(f"[*] Window L={test_L:>2}: Total Features={len(fcols):>3} | Train={X_tr.shape} | Val={X_v.shape} | Test={X_te.shape}")
 
-    # Save feature names for reference
+    # Lưu tên các đặc trưng để tham khảo
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(PROCESSED_DATA_DIR / "feature_list.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(fcols))

@@ -6,7 +6,7 @@
   <title>Tối Ưu Dự Báo Mưa</title>
   <meta name="description" content="Demo đồ án Nhập môn Tối ưu hóa: tối ưu siêu tham số LightGBM (Optuna TPE vs Random Search) cho dự báo mưa 1 giờ tới tại Tân Sơn Nhất dưới ràng buộc độ trễ P95 ≤ 5.0 ms.">
 
-  <!-- Google Fonts -->
+  <!-- Phông chữ từ Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Background Glow Accents -->
+  <!-- Điểm nhấn quầng sáng nền -->
   <div class="bg-glow bg-glow-1"></div>
   <div class="bg-glow bg-glow-2"></div>
 
@@ -54,7 +54,7 @@
     </div>
   </header>
 
-  <!-- Presentation order (5–7 minute demo): optimization first, the live app last -->
+  <!-- Thứ tự trình bày (demo 5–7 phút): phần tối ưu trước, ứng dụng chạy thật sau cùng -->
   <nav class="step-nav" aria-label="Các bước trình bày">
     <ol class="step-nav-list">
       <li><a class="step-link" href="#s-problem"><span class="step-num">1</span>Bài toán</a></li>
@@ -67,10 +67,10 @@
 
   <main class="main-container">
 
-    <!-- Connection / API error notice -->
+    <!-- Thông báo lỗi kết nối / API -->
     <div class="notice notice-error" id="error-notice" role="alert" hidden></div>
 
-    <!-- ============ 1. Problem formulation ============ -->
+    <!-- ============ 1. Phát biểu bài toán ============ -->
     <section class="story-section" id="s-problem" aria-labelledby="h-problem">
       <div class="section-head">
         <span class="step-num step-num-lg" aria-hidden="true">1</span>
@@ -128,7 +128,7 @@
       </div>
     </section>
 
-    <!-- ============ 2. Search results ============ -->
+    <!-- ============ 2. Kết quả tìm kiếm ============ -->
     <section class="story-section" id="s-search" aria-labelledby="h-search">
       <div class="section-head">
         <span class="step-num step-num-lg" aria-hidden="true">2</span>
@@ -163,7 +163,7 @@
       </div>
     </section>
 
-    <!-- ============ 3. Epsilon-constraint scenarios ============ -->
+    <!-- ============ 3. Kịch bản ràng buộc epsilon ============ -->
     <section class="story-section" id="s-scenarios" aria-labelledby="h-scenarios">
       <div class="section-head">
         <span class="step-num step-num-lg" aria-hidden="true">3</span>
@@ -210,7 +210,7 @@
       <p class="caveat">P₉₅ ở bước này là số đo trong pha tìm kiếm (qua wrapper Scikit-learn), cao hơn đường triển khai <code>booster_.predict</code> ở bước 4. Dùng để so sánh tương đối giữa các cấu hình, không phải độ trễ triển khai thực tế.</p>
     </section>
 
-    <!-- ============ 4. Deployment check of the selected model ============ -->
+    <!-- ============ 4. Kiểm chứng triển khai mô hình được chọn ============ -->
     <section class="story-section" id="s-deploy" aria-labelledby="h-deploy">
       <div class="section-head">
         <span class="step-num step-num-lg" aria-hidden="true">4</span>
@@ -220,20 +220,20 @@
         </div>
       </div>
 
-      <!-- Scenario Presets (real observations from the Test set) -->
+      <!-- Kịch bản dựng sẵn (quan trắc thật từ tập Test) -->
       <div class="presets-section">
         <div class="presets-head">
           <h3 class="presets-label">Giờ quan trắc thật trong tập Test (H2/2025)</h3>
           <p class="presets-hint">Chọn một giờ để nạp số liệu đo được, rồi so dự báo với lượng mưa thực tế giờ kế tiếp.</p>
         </div>
         <div class="presets-grid" id="presets-grid">
-          <!-- Rendered by app.js from PRESETS -->
+          <!-- Do app.js tạo ra từ PRESETS -->
         </div>
       </div>
 
       <div class="dashboard-grid">
 
-        <!-- Left Column: Weather Control Panel -->
+        <!-- Cột trái: bảng điều khiển thông số thời tiết -->
         <div class="card panel-controls" role="group" aria-labelledby="controls-heading">
           <div class="card-header">
             <div class="header-title-group">
@@ -315,10 +315,10 @@
           </form>
         </div>
 
-        <!-- Right Column -->
+        <!-- Cột phải -->
         <div class="panel-instruments">
 
-          <!-- Live Prediction Card -->
+          <!-- Thẻ dự báo trực tiếp -->
           <div class="card card-prediction" role="group" aria-labelledby="prediction-heading">
             <div class="card-header">
               <span class="header-badge badge-cyan" id="prediction-heading">Mô hình Optuna TPE</span>
@@ -356,7 +356,7 @@
             </div>
           </div>
 
-          <!-- Hardware Latency Gauge Card -->
+          <!-- Thẻ đồng hồ đo độ trễ phần cứng -->
           <div class="card card-latency" role="group" aria-labelledby="latency-heading">
             <div class="card-header">
               <div class="header-title-group">
@@ -371,9 +371,9 @@
                 <svg class="gauge-svg" viewBox="0 0 160 160" aria-hidden="true">
                   <circle class="gauge-track" cx="80" cy="80" r="65"></circle>
                   <circle class="gauge-fill" id="gauge-circle" cx="80" cy="80" r="65" stroke-dasharray="408.4" stroke-dashoffset="408.4"></circle>
-                  <!-- 4.5 ms safety-margin tick at 90% of the arc. The arc starts at 3 o'clock in
-                       SVG coords (the whole SVG is rotated -90deg in CSS); a line drawn at 12 o'clock
-                       therefore needs +54deg to sit at 324deg = 0.9 * 360. -->
+                  <!-- Vạch chia biên an toàn 4.5 ms ở 90% cung tròn. Trong tọa độ SVG, cung bắt đầu ở
+                       vị trí 3 giờ (cả SVG được xoay -90deg trong CSS); vì vậy đường kẻ vẽ ở vị trí 12 giờ
+                       cần xoay thêm +54deg để nằm ở 324deg = 0.9 * 360. -->
                   <line class="gauge-tick" x1="80" y1="8" x2="80" y2="22" transform="rotate(54 80 80)"></line>
                 </svg>
                 <div class="gauge-content">
@@ -407,7 +407,7 @@
             </div>
           </div>
 
-          <!-- Live Benchmark Card -->
+          <!-- Thẻ benchmark trực tiếp -->
           <div class="card card-benchmark" role="group" aria-labelledby="bench-heading">
             <div class="benchmark-header">
               <div>
@@ -447,7 +447,7 @@
       </div>
     </section>
 
-    <!-- ============ 5. Multi-model benchmark ============ -->
+    <!-- ============ 5. Đối chuẩn nhiều mô hình ============ -->
     <section class="story-section" id="s-benchmark" aria-labelledby="h-benchmark">
       <div class="section-head">
         <span class="step-num step-num-lg" aria-hidden="true">5</span>

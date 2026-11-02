@@ -1,10 +1,10 @@
 """
-Interactive Web Application Server for Rainfall Nowcasting under Latency Constraints.
-Uses Python built-in http.server to provide REST APIs and serve the frontend dashboard.
+Server ứng dụng web tương tác cho bài toán dự báo mưa tức thời (nowcasting) dưới ràng buộc độ trễ.
+Dùng http.server có sẵn của Python để cung cấp REST API và phục vụ dashboard frontend.
 
-The dashboard follows the course demo order: problem -> search results (GET /api/optimization,
-read from results/) -> epsilon scenarios -> deployment check of the champion (POST /api/predict,
-/api/benchmark) -> multi-model benchmark (GET /api/models).
+Dashboard đi theo thứ tự demo của môn học: bài toán -> kết quả tìm kiếm (GET /api/optimization,
+đọc từ results/) -> các kịch bản epsilon -> kiểm tra triển khai mô hình champion (POST /api/predict,
+/api/benchmark) -> benchmark nhiều mô hình (GET /api/models).
 """
 
 import gc
@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import joblib
 
-# Ensure project root is in sys.path
+# Đảm bảo thư mục gốc của dự án có trong sys.path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -42,7 +42,7 @@ HISTORY_COLS = ["seed", "trial", *CONFIG_COLS, "val_rmse", "p95_latency_ms", "is
 
 MAX_BENCHMARK_RUNS = 5000
 
-# Global model state
+# Trạng thái toàn cục của mô hình
 MODEL = None
 PREDICT_FN = None
 METADATA = None
@@ -51,19 +51,19 @@ OPTIMIZATION_DATA = None
 
 
 class BadRequest(ValueError):
-    """Invalid client payload (mapped to HTTP 400)."""
+    """Payload không hợp lệ từ client (ánh xạ sang HTTP 400)."""
 
 
 def _records(df: pd.DataFrame):
-    """JSON-safe rows: to_json maps NaN / pd.NA to null and NumPy scalars to plain numbers."""
+    """Các dòng an toàn cho JSON: to_json đổi NaN / pd.NA thành null và số vô hướng NumPy thành số thường."""
     return json.loads(df.to_json(orient="records"))
 
 
 def build_optimization_payload():
     """
-    Search history, epsilon scenarios and the evaluation summary, all read from results/.
-    Scenarios are recomputed with the same tested function that writes results/epsilon_scenarios.csv,
-    so the dashboard and README cannot disagree. Returns None when the search logs are missing.
+    Lịch sử tìm kiếm, các kịch bản epsilon và bản tóm tắt đánh giá, tất cả đều đọc từ results/.
+    Các kịch bản được tính lại bằng chính hàm đã kiểm thử dùng để ghi results/epsilon_scenarios.csv,
+    nên dashboard và README không thể mâu thuẫn nhau. Trả về None khi thiếu log tìm kiếm.
     """
     if not all(p.exists() for p in HISTORY_PATHS.values()):
         return None
@@ -77,7 +77,7 @@ def build_optimization_payload():
         "safety_margin_ms": SAFETY_MARGIN_MS,
         "summary": summary,
         "scenarios": _records(compute_epsilon_scenarios(histories["RandomSearch"], histories["OptunaTPE"])),
-        # Column-oriented rows keep ~1,000 trials compact on the wire
+        # Gửi một danh sách tên cột kèm các dòng giá trị, để ~1.000 trial gọn nhẹ khi truyền qua mạng
         "history": {
             "columns": HISTORY_COLS,
             **{method: json.loads(df[HISTORY_COLS].to_json(orient="values")) for method, df in histories.items()},
@@ -90,7 +90,7 @@ def load_app_resources():
     if METADATA_PATH.exists():
         with open(METADATA_PATH, "r", encoding="utf-8") as f:
             METADATA = json.load(f)
-        # The API accepts a single hourly observation, so it can only serve an L=1 model.
+        # API chỉ nhận một quan trắc theo giờ duy nhất, nên chỉ có thể phục vụ mô hình L=1.
         L = METADATA.get("L_hours", 1)
         if L != 1:
             raise RuntimeError(f"Dashboard API serves single-observation (L=1) models only; artifact has L={L}.")
@@ -98,8 +98,8 @@ def load_app_resources():
 
     if MODEL_PATH.exists():
         MODEL = joblib.load(MODEL_PATH)
-        # Call the native booster on NumPy directly (no sklearn validation / DataFrame overhead),
-        # the same path used by the latency benchmark.
+        # Gọi trực tiếp booster gốc trên NumPy (bỏ qua chi phí kiểm tra hợp lệ của sklearn / DataFrame),
+        # cùng đường xử lý mà benchmark độ trễ sử dụng.
         PREDICT_FN = MODEL.booster_.predict if hasattr(MODEL, "booster_") else MODEL.predict
         print(f"[+] Loaded Champion Model from {MODEL_PATH}")
     else:
@@ -119,7 +119,7 @@ def load_app_resources():
         n = sum(len(OPTIMIZATION_DATA["history"][m]) for m in HISTORY_PATHS)
         print(f"[+] Loaded optimization history ({n} trials) and epsilon scenarios")
 
-    # Warmup model once at boot
+    # Warmup mô hình một lần khi khởi động
     if PREDICT_FN is not None:
         warm = build_feature_vector({})
         for _ in range(20):
@@ -139,8 +139,8 @@ def _num(data: dict, key: str, default: float) -> float:
 
 def build_feature_vector(data: dict) -> np.ndarray:
     """
-    Validate input (temp, dwpt, rhum, pres, wspd, prcp, hour, month) and build the model's
-    feature vector through the same extractor covered by the batch/single-sample parity test.
+    Kiểm tra hợp lệ đầu vào (temp, dwpt, rhum, pres, wspd, prcp, hour, month) và tạo vector đặc trưng
+    của mô hình bằng chính bộ trích xuất được kiểm thử khớp kết quả giữa xử lý theo lô và mẫu đơn.
     """
     hour = int(_num(data, "hour", 14))
     month = int(_num(data, "month", 10))
@@ -160,8 +160,8 @@ def build_feature_vector(data: dict) -> np.ndarray:
 
 def predict_single(data: dict):
     """
-    Run timed end-to-end inference on input weather observation.
-    Input dictionary: temp, dwpt, rhum, pres, wspd, prcp, hour, month.
+    Chạy suy luận end-to-end có đo thời gian trên quan trắc thời tiết đầu vào.
+    Dict đầu vào: temp, dwpt, rhum, pres, wspd, prcp, hour, month.
     """
     t0 = time.perf_counter_ns()
     feat_arr = build_feature_vector(data)
@@ -175,7 +175,7 @@ def predict_single(data: dict):
     t_predict_ms = (t_pred - t_feat) / 1e6
     t_total_ms = (t_pred - t0) / 1e6
 
-    # Determine Flood Alert Category
+    # Xác định mức cảnh báo ngập
     if pred_rain >= 10.0:
         alert_level = "RED"
         alert_title = "BÁO ĐỘNG ĐỎ: Mưa Cực Đoan"
@@ -221,16 +221,16 @@ def predict_single(data: dict):
 
 
 def run_latency_benchmark(data: dict, n_runs: int = 200, warmup: int = 20):
-    """Run statistical end-to-end latency benchmark (feature build + predict) on current hardware."""
+    """Chạy benchmark thống kê độ trễ end-to-end (tạo đặc trưng + dự báo) trên phần cứng hiện tại."""
     if not 1 <= n_runs <= MAX_BENCHMARK_RUNS:
         raise BadRequest(f"'n_runs' must be in [1, {MAX_BENCHMARK_RUNS}]")
-    build_feature_vector(data)  # validate once before timing
+    build_feature_vector(data)  # kiểm tra hợp lệ một lần trước khi đo thời gian
 
-    # Warmup
+    # Chạy warmup
     for _ in range(warmup):
         _ = PREDICT_FN(build_feature_vector(data))
 
-    # Measurement repetitions (GC paused, as in src/evaluation/latency.py)
+    # Các lần đo lặp lại (tạm dừng GC, giống src/evaluation/latency.py)
     durations = np.empty(n_runs, dtype=np.float64)
     gc_was_enabled = gc.isenabled()
     gc.disable()
