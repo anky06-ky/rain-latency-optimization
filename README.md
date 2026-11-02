@@ -8,7 +8,12 @@
 
 > **Course Project:** Introduction to Optimization (*Nhập môn Tối ưu hóa*)  
 > **Institution:** Faculty of Information Technology, Van Lang University  
-> **Topic:** Supervised Time-Series Forecasting under Hardware/Latency Constraint
+> **Topic:** Supervised Time-Series Forecasting under Hardware/Latency Constraint  
+>  
+> 📄 **Official Research Deliverables:**  
+> * **Báo cáo Nghiên cứu Khoa học Toàn diện (Academic Paper PDF):** [`docs/BAI_BAO_KHOA_HOC_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf`](docs/BAI_BAO_KHOA_HOC_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf) *(Bản Markdown: [`docs/BAI_BAO_KHOA_HOC_TOI_UU_HOA_DU_BAO_LUONG_MUA.md`](docs/BAI_BAO_KHOA_HOC_TOI_UU_HOA_DU_BAO_LUONG_MUA.md))*  
+> * **Đề cương Thuyết minh Đề tài (Proposal PDF):** [`docs/PROPOSAL_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf`](docs/PROPOSAL_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf) *(Bản Markdown: [`docs/PROPOSAL.md`](docs/PROPOSAL.md))*  
+> * **Web Dashboard Tương tác Trực quan:** `python src/server.py` → Truy cập tại `http://127.0.0.1:8000`
 
 ---
 
