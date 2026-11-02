@@ -1,14 +1,14 @@
 """
-Main Optimization Method: Constrained Bayesian Optimization via Optuna (TPE).
+Phương pháp tối ưu chính: Tối ưu Bayes có ràng buộc bằng Optuna (TPE).
 
-Searches decision variables x = (L, theta) over a bounded space:
-    - L: Historical window length in hours
-    - theta: LightGBM hyperparameters
-Objective: Minimize Validation RMSE subject to P95 End-to-End Latency <= 5.0 ms.
-Budget: Default 100 trials per seed across 5 random seeds (total 500 evaluations for RQ2 scaling);
-        can be set to 40 trials per seed (200 evaluations) for RQ1 fair budget comparison.
-Search cost: every logged trial records trial_time_s (wall-clock seconds for TPE sampling, training,
-        validation and the latency benchmark).
+Tìm biến quyết định x = (L, theta) trên một không gian tìm kiếm có giới hạn:
+    - L: Độ dài cửa sổ lịch sử tính theo giờ
+    - theta: Các siêu tham số của LightGBM
+Hàm mục tiêu: cực tiểu hóa RMSE trên tập Val với ràng buộc độ trễ end-to-end P95 <= 5.0 ms.
+Ngân sách: mặc định 100 trial/seed với 5 seed ngẫu nhiên (tổng 500 lượt đánh giá, RQ2 - mở rộng ngân sách);
+        có thể đặt 40 trial/seed (200 lượt đánh giá) để so sánh công bằng cùng ngân sách cho RQ1.
+Chi phí tìm kiếm: mỗi trial trong log đều ghi trial_time_s (số giây thực tế cho lấy mẫu TPE, huấn luyện,
+        đánh giá trên tập Val và benchmark độ trễ).
 """
 
 import argparse
@@ -17,7 +17,7 @@ import sys
 import time
 from typing import List, Dict, Any
 
-# Ensure project root is in sys.path
+# Đảm bảo thư mục gốc của dự án có trong sys.path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -33,7 +33,7 @@ from src.models.optimize_random import get_train_val_split
 from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS
 
 
-# Suppress verbose Optuna logging during search
+# Tắt log chi tiết của Optuna trong quá trình tìm kiếm
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 RESULTS_DIR = Path("results")
@@ -48,17 +48,17 @@ def run_optuna_study(
     seed: int,
     n_trials: int = 40,
 ) -> List[Dict[str, Any]]:
-    """Execute one Optuna study for a given random seed."""
+    """Chạy một study Optuna với một seed ngẫu nhiên cho trước."""
     trial_records = []
-    # Latency is measured strictly on the Validation slice (0% contact with Test set)
+    # Độ trễ chỉ được đo trên phần dữ liệu của tập Val (hoàn toàn không chạm vào tập Test)
     val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
 
     def objective(trial: optuna.Trial) -> float:
-        # Search cost clock. TPE samples inside suggest_* (independent sampling), so it is included;
-        # the first trial per L also pays for the (cached) feature build.
+        # Đồng hồ đo chi phí tìm kiếm. TPE lấy mẫu bên trong suggest_* (lấy mẫu độc lập) nên được tính vào;
+        # trial đầu tiên của mỗi L còn tính cả thời gian tạo đặc trưng (được lưu đệm).
         t0 = time.perf_counter()
 
-        # 1. Suggest decision variables
+        # 1. Đề xuất các biến quyết định
         L = trial.suggest_categorical("L", WINDOW_CANDIDATES)
         n_estimators = trial.suggest_categorical("n_estimators", [20, 50, 100, 150, 200, 300, 400, 500])
         max_depth = trial.suggest_categorical("max_depth", [2, 3, 4, 6, 8, 10, 12])
@@ -66,10 +66,10 @@ def run_optuna_study(
         learning_rate = trial.suggest_float("learning_rate", 0.01, 0.25, log=True)
         min_child_samples = trial.suggest_categorical("min_child_samples", [10, 20, 50, 100])
 
-        # 2. Build features for window L (cached: only len(WINDOW_CANDIDATES) distinct matrices)
+        # 2. Tạo đặc trưng cho cửa sổ L (lưu đệm: chỉ có len(WINDOW_CANDIDATES) ma trận khác nhau)
         fcols, (X_tr, y_tr), (X_v, y_v) = get_train_val_split(clean_df, L)
 
-        # 3. Fit LightGBM model
+        # 3. Huấn luyện mô hình LightGBM
         model = lgb.LGBMRegressor(
             n_estimators=n_estimators,
             max_depth=max_depth,
@@ -82,16 +82,16 @@ def run_optuna_study(
         )
         model.fit(X_tr, y_tr)
 
-        # 4. Compute validation metrics
+        # 4. Tính các chỉ số trên tập Val
         y_val_pred = model.predict(X_v)
         val_rmse = float(root_mean_squared_error(y_v, y_val_pred))
         val_mae = float(mean_absolute_error(y_v, y_val_pred))
 
-        # 5. Measure single-sample End-to-End Latency
+        # 5. Đo độ trễ end-to-end trên một mẫu đơn
         raw_window = val_slice.iloc[-L:]
         lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=200, warmup=20)
 
-        # 6. Set constraint in Optuna: violation <= 0 means feasible (P95 <= 5.0 ms)
+        # 6. Đặt ràng buộc cho Optuna: mức vi phạm <= 0 nghĩa là khả thi (P95 <= 5.0 ms)
         p95_lat = lat_res["p95_latency_ms"]
         latency_violation = float(p95_lat - LATENCY_CONSTRAINT_MS)
         trial.set_user_attr("constraint", [latency_violation])
@@ -105,7 +105,7 @@ def run_optuna_study(
             "n_estimators": n_estimators,
             "max_depth": max_depth,
             "num_leaves": num_leaves,
-            # Full precision: rounding here made retraining from the CSV produce a different model
+            # Giữ nguyên độ chính xác: làm tròn ở đây từng khiến huấn luyện lại từ CSV cho ra mô hình khác
             "learning_rate": learning_rate,
             "min_child_samples": min_child_samples,
             "val_rmse": round(val_rmse, 4),
@@ -120,10 +120,10 @@ def run_optuna_study(
         return val_rmse
 
     def constraints_func(trial: optuna.trial.FrozenTrial):
-        """Optuna TPESampler constraint function: returns list of floats, <= 0 is feasible."""
+        """Hàm ràng buộc cho TPESampler của Optuna: trả về danh sách số thực, <= 0 là khả thi."""
         return trial.user_attrs.get("constraint", [0.0])
 
-    # Create study with Constrained TPE sampler
+    # Tạo study với TPE sampler có ràng buộc
     sampler = optuna.samplers.TPESampler(seed=seed, constraints_func=constraints_func)
     study = optuna.create_study(sampler=sampler, direction="minimize")
     study.optimize(objective, n_trials=n_trials)
@@ -132,7 +132,7 @@ def run_optuna_study(
 
 
 def run_optuna_search(n_trials: int = 40, seeds: List[int] = DEFAULT_SEEDS) -> pd.DataFrame:
-    """Execute Optuna TPE search across all seeds."""
+    """Chạy tìm kiếm Optuna TPE trên tất cả các seed."""
     print("=" * 65)
     print("STARTING MAIN OPTIMIZATION: CONSTRAINED OPTUNA (TPE)")
     print(f"Budget: {n_trials} trials/seed across {len(seeds)} seeds (Total: {n_trials * len(seeds)} evaluations)")
@@ -150,7 +150,7 @@ def run_optuna_search(n_trials: int = 40, seeds: List[int] = DEFAULT_SEEDS) -> p
 
         all_trials.extend(records)
 
-        # Print seed summary
+        # In tóm tắt kết quả của seed
         feasible_records = [r for r in records if r["is_feasible"]]
         if feasible_records:
             best_feasible = min(feasible_records, key=lambda r: r["val_rmse"])

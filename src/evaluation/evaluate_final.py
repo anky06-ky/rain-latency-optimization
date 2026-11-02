@@ -1,21 +1,21 @@
 """
-Final Evaluation & Multi-Model Visualization Module.
+Module đánh giá cuối cùng và trực quan hóa đa mô hình.
 
-1. Visualizes chronological Train / Validation / Test data split.
-2. Identifies the best feasible configuration (L*, theta*) on Validation.
-3. Evaluates the selected model on the held-out Test set (2025-07 to 2025-12) EXACTLY ONCE.
-4. Performs comprehensive multi-model benchmark (Persistence, Climatology, Linear, Ridge,
-   Default LightGBM, Random Search best, Optuna best) with skill scores vs Persistence/Climatology.
-5. Computes feasible-rate statistics from the logged is_feasible flag: pooled Fisher / chi2
-   (assumes independent trials) and per-seed Wilcoxon / paired t-test (seed = replication unit).
-6. Generates Pareto Frontier, Search Convergence, Split Timeline, and Actual vs Predicted figures.
-7. Re-solves the epsilon-constraint problem for several latency budgets (decision per scenario) and
-   reports search cost (evaluation count; wall-clock when the logs carry trial_time_s).
+1. Trực quan hóa cách chia dữ liệu thành tập Train / Val / Test theo thứ tự thời gian.
+2. Xác định cấu hình khả thi tốt nhất (L*, theta*) trên tập Val.
+3. Đánh giá mô hình được chọn trên tập Test giữ riêng (2025-07 đến 2025-12) ĐÚNG MỘT LẦN.
+4. Chạy benchmark đầy đủ nhiều mô hình (Persistence, Climatology, Linear, Ridge, LightGBM mặc định,
+   Random Search tốt nhất, Optuna tốt nhất), kèm skill score so với Persistence/Climatology.
+5. Tính thống kê tỷ lệ khả thi từ cờ is_feasible đã ghi trong log: Fisher / chi2 gộp
+   (giả định các trial độc lập) và Wilcoxon / paired t-test theo từng seed (seed = đơn vị lặp lại).
+6. Sinh các hình biên Pareto, hội tụ tìm kiếm, dòng thời gian chia tập và Thực tế vs Dự báo.
+7. Giải lại bài toán epsilon-constraint cho nhiều ngân sách độ trễ (quyết định theo từng kịch bản) và
+   báo cáo chi phí tìm kiếm (số lượt đánh giá; thời gian chạy khi log có cột trial_time_s).
 
-Outputs (single source of truth for README / paper numbers):
+Đầu ra (nguồn số liệu gốc duy nhất cho README / bài báo):
     results/multi_model_benchmark.csv, results/final_test_metrics.json, results/epsilon_scenarios.csv,
     results/figures/*.png
-Note: Persistence / Climatology latencies are fixed nominal values, not measured.
+Lưu ý: độ trễ của Persistence / Climatology là giá trị danh nghĩa cố định, không phải giá trị đo.
 """
 
 import json
@@ -23,7 +23,7 @@ from pathlib import Path
 import sys
 from typing import Any, Tuple, Dict, List
 
-# Ensure project root is in sys.path
+# Đảm bảo thư mục gốc của dự án có trong sys.path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -59,7 +59,7 @@ FINAL_METRICS_JSON = RESULTS_DIR / "final_test_metrics.json"
 
 
 def plot_train_val_test_split(clean_df: pd.DataFrame):
-    """Plot the chronological time-series splitting timeline across 2023-2025."""
+    """Vẽ dòng thời gian chia tập (theo trình tự thời gian) của chuỗi dữ liệu giai đoạn 2023-2025."""
     fig, ax = plt.subplots(figsize=(12, 4.5))
 
     daily_df = clean_df.copy()
@@ -71,7 +71,7 @@ def plot_train_val_test_split(clean_df: pd.DataFrame):
 
     ax.plot(daily_df["time"], daily_df["prcp"], color="#4a7bb0", alpha=0.6, label="Lượng mưa ngày (mm)")
 
-    # Highlight split regions with exact hour counts and leap year detail
+    # Tô màu các vùng chia tập, kèm số giờ chính xác và chi tiết năm nhuận
     ax.axvspan(daily_df["time"].min(), train_end, color="#74c476", alpha=0.3, label="Train (17.544 giờ, 66.7% - 2023-2024, năm 2024 nhuận)")
     ax.axvspan(train_end, val_end, color="#fed976", alpha=0.4, label="Validation (4.344 giờ, 16.5% - T1-T6/2025)")
     ax.axvspan(val_end, daily_df["time"].max(), color="#fc9272", alpha=0.4, label="Test (4.416 giờ, 16.8% - T7-T12/2025, đỉnh mùa mưa)")
@@ -93,13 +93,13 @@ def plot_train_val_test_split(clean_df: pd.DataFrame):
 
 
 def plot_pareto_frontier(df_all: pd.DataFrame):
-    """Plot Validation RMSE vs Latency trade-off, highlighting the actual non-dominated Pareto frontier."""
+    """Vẽ đánh đổi giữa Val RMSE và độ trễ, làm nổi bật biên Pareto thực tế (các điểm không bị trội)."""
     plt.figure(figsize=(10, 6))
 
     feasible = df_all[df_all["is_feasible"]].copy()
     infeasible = df_all[~df_all["is_feasible"]].copy()
 
-    # Scatter plot of all trials
+    # Biểu đồ phân tán của tất cả các trial
     plt.scatter(
         feasible["p95_latency_ms"],
         feasible["val_rmse"],
@@ -120,7 +120,7 @@ def plot_pareto_frontier(df_all: pd.DataFrame):
         label=f"Vi phạm ràng buộc (> {LATENCY_CONSTRAINT_MS} ms)",
     )
 
-    # Constraint threshold line
+    # Đường ngưỡng ràng buộc
     plt.axvline(
         LATENCY_CONSTRAINT_MS,
         color="red",
@@ -129,7 +129,7 @@ def plot_pareto_frontier(df_all: pd.DataFrame):
         label=f"Ràng buộc Latency ({LATENCY_CONSTRAINT_MS} ms)",
     )
 
-    # Compute actual Non-Dominated Pareto Frontier among feasible points
+    # Tính biên Pareto thực tế (các điểm không bị trội) trong số các điểm khả thi
     if not feasible.empty:
         feasible_sorted = feasible.sort_values("p95_latency_ms").reset_index(drop=True)
         pareto_records = []
@@ -186,7 +186,7 @@ def plot_pareto_frontier(df_all: pd.DataFrame):
 
 
 def plot_convergence_comparison(df_random: pd.DataFrame, df_optuna: pd.DataFrame):
-    """Plot best-so-far curve over 40 trials comparing Random Search vs Optuna TPE."""
+    """Vẽ đường tốt nhất tính đến hiện tại theo từng trial (có mốc 40 trial của RQ1): Random Search vs Optuna TPE."""
     plt.figure(figsize=(9, 5))
 
     def get_convergence_matrix(df: pd.DataFrame) -> np.ndarray:
@@ -212,17 +212,17 @@ def plot_convergence_comparison(df_random: pd.DataFrame, df_optuna: pd.DataFrame
 
     trials_axis = np.arange(1, mat_random.shape[1] + 1)
 
-    # Random Search Mean ± Std
+    # Random Search: trung bình ± độ lệch chuẩn
     mean_r, std_r = np.nanmean(mat_random, axis=0), np.nanstd(mat_random, axis=0)
     plt.plot(trials_axis, mean_r, label="Baseline: Random Search", color="#756bb1", linewidth=2.2)
     plt.fill_between(trials_axis, mean_r - std_r, mean_r + std_r, color="#756bb1", alpha=0.2)
 
-    # Optuna TPE Mean ± Std
+    # Optuna TPE: trung bình ± độ lệch chuẩn
     mean_o, std_o = np.nanmean(mat_optuna, axis=0), np.nanstd(mat_optuna, axis=0)
     plt.plot(trials_axis, mean_o, label="Main Method: Optuna (TPE)", color="#31a354", linewidth=2.2)
     plt.fill_between(trials_axis, mean_o - std_o, mean_o + std_o, color="#31a354", alpha=0.2)
 
-    # Highlight RQ1 Cutoff at trial 40 if trials > 40
+    # Đánh dấu mốc cắt RQ1 tại trial 40 nếu mỗi seed có ít nhất 40 trial
     if len(trials_axis) >= 40:
         plt.axvline(x=40, color="#d95f02", linestyle="--", linewidth=1.5, alpha=0.85, label="RQ1 Ngưỡng đối chuẩn (40 trials)")
         plt.text(41, np.nanmax(mean_r) - 0.0005, "Pha 2: Mở rộng ngân sách (RQ2)", fontsize=9, color="#d95f02", fontweight="bold")
@@ -243,7 +243,7 @@ def plot_convergence_comparison(df_random: pd.DataFrame, df_optuna: pd.DataFrame
 
 
 def plot_actual_vs_predicted(clean_df: pd.DataFrame, model: Any, L: int):
-    """Plot Actual vs Predicted rainfall on a representative storm event in the Test set."""
+    """Vẽ lượng mưa Thực tế vs Dự báo trong một đợt mưa bão tiêu biểu thuộc tập Test."""
     df_feat, fcols = build_features(clean_df, L=L)
     _, _, (X_te, y_te) = split_time_series(df_feat, fcols)
 
@@ -252,7 +252,7 @@ def plot_actual_vs_predicted(clean_df: pd.DataFrame, model: Any, L: int):
     test_plot_df["pred"] = model.predict(X_te)
     test_plot_df["target_time"] = test_plot_df["target_time"].dt.tz_localize(None)
 
-    # Select October 2025 (peak storm period)
+    # Chọn nửa đầu tháng 10/2025 (01–15/10, giai đoạn đỉnh mùa mưa)
     oct_sample = test_plot_df[(test_plot_df["target_time"] >= "2025-10-01") & (test_plot_df["target_time"] <= "2025-10-15 23:59:59")]
 
     plt.figure(figsize=(13, 5))
@@ -272,16 +272,16 @@ def plot_actual_vs_predicted(clean_df: pd.DataFrame, model: Any, L: int):
 
 
 def compute_split_metrics(y_true: pd.Series, y_pred: np.ndarray) -> Dict[str, float]:
-    """Calculate comprehensive regression and domain-specific flood warning metrics."""
+    """Tính đầy đủ các chỉ số hồi quy và các chỉ số chuyên ngành cho cảnh báo ngập lụt."""
     rmse = float(root_mean_squared_error(y_true, y_pred))
     mae = float(mean_absolute_error(y_true, y_pred))
 
-    # Wet-hour metrics (hours with actual precipitation > 0 mm)
+    # Chỉ số trên giờ mưa (các giờ có lượng mưa thực tế > 0 mm)
     wet_mask = y_true.values > 0.0
     wet_rmse = float(root_mean_squared_error(y_true[wet_mask], y_pred[wet_mask])) if wet_mask.sum() > 0 else np.nan
     wet_mae = float(mean_absolute_error(y_true[wet_mask], y_pred[wet_mask])) if wet_mask.sum() > 0 else np.nan
 
-    # Rain event detection (threshold >= 0.5 mm/h)
+    # Phát hiện sự kiện mưa (ngưỡng >= 0.5 mm/h)
     y_true_rain = (y_true.values >= 0.5).astype(int)
     y_pred_rain = (y_pred >= 0.5).astype(int)
     prec = float(precision_score(y_true_rain, y_pred_rain, zero_division=0))
@@ -304,17 +304,17 @@ def run_multi_model_benchmark(
     best_opt_config: pd.Series,
     best_rnd_config: pd.Series,
 ) -> Tuple[pd.DataFrame, Any, Dict[str, Any]]:
-    """Benchmark all baseline and optimized models across Train, Validation, and Test sets."""
+    """Benchmark tất cả mô hình baseline và mô hình đã tối ưu trên các tập Train, Val và Test."""
     print("\n" + "=" * 70)
     print("RUNNING MULTI-MODEL BENCHMARK (TRAIN vs VAL vs TEST + WET HOURS & F1 & SKILL SCORES)")
     print("=" * 70)
 
     benchmark_rows = []
 
-    # Sliced strictly from Validation set to prevent any data snooping into Test period
+    # Chỉ cắt từ tập Val để ngăn mọi hành vi nhìn trộm dữ liệu (data snooping) giai đoạn Test
     val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
 
-    # 1. Persistence Baseline (y_t+1 = prcp_t)
+    # 1. Baseline Persistence (y_t+1 = prcp_t)
     df_feat_1, fcols_1 = build_features(clean_df, L=1)
     (X_tr_1, y_tr_1), (X_v_1, y_v_1), (X_te_1, y_te_1) = split_time_series(df_feat_1, fcols_1)
     tr_m1 = compute_split_metrics(y_tr_1, X_tr_1["prcp_lag_0"].values)
@@ -334,9 +334,9 @@ def run_multi_model_benchmark(
         "Feasible": True,
     })
 
-    # 2. Climatology Baseline (Month-Hour mean rainfall from training set)
-    # Split indices refer to df_feat_1 (re-indexed after dropna), NOT clean_df, so timestamps must be
-    # looked up there. Keyed by target_time: the climatology of y_{t+1} at its own month/hour.
+    # 2. Baseline Climatology (lượng mưa trung bình theo Tháng-Giờ, tính trên tập Train)
+    # Index của các tập chia thuộc df_feat_1 (đã đánh lại index sau dropna), KHÔNG phải clean_df, nên
+    # phải tra mốc thời gian ở đó. Khóa theo target_time: climatology của y_{t+1} tại đúng tháng/giờ của nó.
     target_times = df_feat_1["target_time"]
     clim_df = pd.DataFrame({
         "month": target_times.loc[y_tr_1.index].dt.month.values,
@@ -371,7 +371,7 @@ def run_multi_model_benchmark(
         "Feasible": True,
     })
 
-    # 3. Linear Regression (L=6)
+    # 3. Hồi quy tuyến tính (Linear Regression, L=6)
     df_feat_6, fcols_6 = build_features(clean_df, L=6)
     (X_tr_6, y_tr_6), (X_v_6, y_v_6), (X_te_6, y_te_6) = split_time_series(df_feat_6, fcols_6)
     lr = LinearRegression()
@@ -394,7 +394,7 @@ def run_multi_model_benchmark(
         "Feasible": lat_lr["is_feasible"],
     })
 
-    # 4. Ridge Regression (L=6, alpha=1.0)
+    # 4. Hồi quy Ridge (L=6, alpha=1.0)
     ridge = Ridge(alpha=1.0)
     ridge.fit(X_tr_6.values, y_tr_6.values)
     tr_m3 = compute_split_metrics(y_tr_6, ridge.predict(X_tr_6.values))
@@ -415,7 +415,7 @@ def run_multi_model_benchmark(
         "Feasible": lat_ridge["is_feasible"],
     })
 
-    # 5. LightGBM Default (L=6, 100 trees, depth=-1)
+    # 5. LightGBM mặc định (L=6, 100 cây, depth=-1)
     lgb_def = lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1, n_jobs=1)
     lgb_def.fit(X_tr_6, y_tr_6)
     tr_m4 = compute_split_metrics(y_tr_6, lgb_def.predict(X_tr_6))
@@ -436,7 +436,7 @@ def run_multi_model_benchmark(
         "Feasible": lat_def["is_feasible"],
     })
 
-    # 6. Random Search Best (Loaded dynamically from CSV)
+    # 6. Random Search tốt nhất (cấu hình nạp động từ CSV)
     rnd_L = int(best_rnd_config["L"])
     df_feat_rnd, fcols_rnd = build_features(clean_df, L=rnd_L)
     (X_tr_r, y_tr_r), (X_v_r, y_v_r), (X_te_r, y_te_r) = split_time_series(df_feat_rnd, fcols_rnd)
@@ -469,7 +469,7 @@ def run_multi_model_benchmark(
         "Feasible": lat_rnd["is_feasible"],
     })
 
-    # 7. Optuna TPE Best (Overall Best Feasible Model)
+    # 7. Optuna TPE tốt nhất (mô hình khả thi tốt nhất tổng thể)
     best_L = int(best_opt_config["L"])
     df_feat_opt, fcols_opt = build_features(clean_df, L=best_L)
     (X_tr_o, y_tr_o), (X_v_o, y_v_o), (X_te_o, y_te_o) = split_time_series(df_feat_opt, fcols_opt)
@@ -488,7 +488,7 @@ def run_multi_model_benchmark(
     val_m6 = compute_split_metrics(y_v_o, lgb_opt.predict(X_v_o))
     te_m6 = compute_split_metrics(y_te_o, lgb_opt.predict(X_te_o))
 
-    # Multi-repetition latency test for Champion (5 runs of 100 iterations)
+    # Đo độ trễ lặp lại nhiều lần cho champion (5 lượt, mỗi lượt 100 lần lặp)
     opt_lat_runs = [benchmark_end_to_end_latency(lgb_opt, val_slice.iloc[-best_L:], L=best_L, n_runs=100, warmup=20) for _ in range(5)]
     opt_p95_list = [r["p95_latency_ms"] for r in opt_lat_runs]
     opt_p95_median = float(np.median(opt_p95_list))
@@ -509,7 +509,7 @@ def run_multi_model_benchmark(
         "Feasible": bool(opt_p95_median <= LATENCY_CONSTRAINT_MS),
     })
 
-    # Compute Skill Scores relative to Persistence and Climatology
+    # Tính skill score so với Persistence và Climatology
     ref_pers_rmse = te_m1["rmse"]
     ref_clim_rmse = te_m_clim["rmse"]
     for row in benchmark_rows:
@@ -562,20 +562,20 @@ def run_multi_model_benchmark(
 
 
 def summarize_search_cost(df: pd.DataFrame) -> Dict[str, Any]:
-    """Search cost of one method: evaluation count always; wall-clock only if the log has trial_time_s."""
+    """Chi phí tìm kiếm của một phương pháp: luôn có số lượt đánh giá; thời gian chạy nếu có trial_time_s."""
     cost: Dict[str, Any] = {"evaluations": int(len(df))}
     if "trial_time_s" in df.columns:
         cost["total_wall_clock_min"] = round(float(df["trial_time_s"].sum()) / 60, 2)
         cost["mean_trial_time_s"] = round(float(df["trial_time_s"].mean()), 3)
         cost["median_trial_time_s"] = round(float(df["trial_time_s"].median()), 3)
     else:
-        # Logs produced before per-trial timing was added (cost is known only as an evaluation count)
+        # Log được tạo trước khi bổ sung đo thời gian từng trial (chi phí chỉ biết qua số lượt đánh giá)
         cost["total_wall_clock_min"] = None
     return cost
 
 
 def evaluate_final_test_set():
-    """Main evaluation pipeline orchestrating all figures and final metrics."""
+    """Pipeline đánh giá chính, điều phối việc tạo toàn bộ hình vẽ và chỉ số cuối cùng."""
     if not RANDOM_CSV.exists() or not OPTUNA_CSV.exists():
         raise FileNotFoundError("Missing optimization logs. Please run optimize_random.py and optimize_optuna.py first.")
 
@@ -586,16 +586,16 @@ def evaluate_final_test_set():
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     clean_df = load_clean_weather_data()
 
-    # 1. Figure: Chronological Data Split Timeline
+    # 1. Hình: chia tập dữ liệu theo dòng thời gian
     plot_train_val_test_split(clean_df)
 
-    # 2. Figure: Pareto Frontier Plot
+    # 2. Hình: biên Pareto
     plot_pareto_frontier(df_all)
 
-    # 3. Figure: Convergence Comparison Plot
+    # 3. Hình: so sánh hội tụ
     plot_convergence_comparison(df_random, df_optuna)
 
-    # 4. Extract best feasible configurations from both methods
+    # 4. Lấy cấu hình khả thi tốt nhất của cả hai phương pháp
     feasible_rnd = df_random[df_random["is_feasible"]]
     feasible_opt = df_optuna[df_optuna["is_feasible"]]
     if feasible_rnd.empty or feasible_opt.empty:
@@ -604,7 +604,7 @@ def evaluate_final_test_set():
     best_rnd_config = feasible_rnd.loc[feasible_rnd["val_rmse"].idxmin()]
     best_opt_config = feasible_opt.loc[feasible_opt["val_rmse"].idxmin()]
 
-    # 5. Compute rigorous seed-level statistics (mean +/- std) and paired t-test
+    # 5. Tính thống kê chặt chẽ ở cấp seed (trung bình +/- độ lệch chuẩn) và paired t-test
     rnd_seed_best = feasible_rnd.groupby("seed")["val_rmse"].min()
     opt_seed_best = feasible_opt.groupby("seed")["val_rmse"].min()
 
@@ -614,19 +614,19 @@ def evaluate_final_test_set():
     t_stat, p_val = stats.ttest_rel(rnd_vals, opt_vals)
     budget_per_seed = int(df_optuna.groupby("seed").size().max())
 
-    # 6. Multi-Model Benchmark across Train, Validation, and Test
+    # 6. Benchmark nhiều mô hình trên các tập Train, Val và Test
     bench_df, final_model, extra_stats = run_multi_model_benchmark(clean_df, best_opt_config, best_rnd_config)
 
-    # 7. Figure: Actual vs Predicted Rainfall on Test Set
+    # 7. Hình: lượng mưa Thực tế vs Dự báo trên tập Test
     plot_actual_vs_predicted(clean_df, final_model, L=int(best_opt_config["L"]))
 
-    # 8. Table: epsilon-constraint scenarios (selection rule re-applied per latency budget, logs only)
+    # 8. Bảng: kịch bản epsilon-constraint (áp lại quy tắc chọn nghiệm cho mỗi ngân sách độ trễ, chỉ dùng log)
     compute_epsilon_scenarios(df_random, df_optuna).to_csv(SCENARIOS_CSV, index=False)
     print(f"\n[+] Saved epsilon-constraint scenarios to {SCENARIOS_CSV}")
 
-    # Compute feasible counts dynamically from CSVs. The SLA count uses the logged is_feasible flag
-    # (computed on unrounded P95, i.e. the constraint the optimizer actually saw); re-thresholding the
-    # 3-decimal p95_latency_ms column misclassifies trials sitting exactly at 5.000 ms.
+    # Tính số trial khả thi trực tiếp từ các file CSV. Số đếm theo SLA dùng cờ is_feasible đã ghi trong log
+    # (tính trên P95 chưa làm tròn, tức đúng ràng buộc mà bộ tối ưu thực sự thấy); nếu đặt lại ngưỡng trên cột
+    # p95_latency_ms (3 chữ số thập phân) thì sẽ phân loại sai các trial nằm đúng tại 5.000 ms.
     opt_feas_count_50 = int(df_optuna["is_feasible"].sum())
     rnd_feas_count_50 = int(df_random["is_feasible"].sum())
     opt_feas_pct_50 = round(float(opt_feas_count_50 / len(df_optuna) * 100), 1)
@@ -637,19 +637,19 @@ def evaluate_final_test_set():
     opt_feas_pct_45 = round(float(opt_feas_count_45 / len(df_optuna) * 100), 1)
     rnd_feas_pct_45 = round(float(rnd_feas_count_45 / len(df_random) * 100), 1)
 
-    # Phase 1 comparison (first 40 trials per seed)
+    # So sánh Pha 1 (40 trial đầu tiên của mỗi seed)
     opt_p1 = df_optuna.groupby("seed").head(40)
     rnd_p1 = df_random.groupby("seed").head(40)
     opt_p1_feas = int(opt_p1["is_feasible"].sum())
     rnd_p1_feas = int(rnd_p1["is_feasible"].sum())
 
-    # Per-seed feasible counts (seed is the independent replication unit)
+    # Số trial khả thi theo từng seed (seed là đơn vị lặp lại độc lập)
     opt_seed_feas = df_optuna.groupby("seed")["is_feasible"].sum().reindex(common_seeds)
     rnd_seed_feas = df_random.groupby("seed")["is_feasible"].sum().reindex(common_seeds)
     wilcoxon_p = float(stats.wilcoxon(opt_seed_feas, rnd_seed_feas).pvalue)
     seed_feas_t, seed_feas_p = stats.ttest_rel(opt_seed_feas, rnd_seed_feas)
 
-    # Statistical test for feasible rates (Fisher's exact test & 95% CI for difference)
+    # Kiểm định thống kê cho tỷ lệ khả thi (Fisher's exact test và khoảng tin cậy 95% cho chênh lệch)
     table_50 = [[opt_feas_count_50, len(df_optuna) - opt_feas_count_50],
                 [rnd_feas_count_50, len(df_random) - rnd_feas_count_50]]
     odds_ratio_50, p_fisher_50 = stats.fisher_exact(table_50)

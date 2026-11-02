@@ -1,21 +1,21 @@
 /**
- * Rainfall Nowcasting under a Latency Constraint - Client Logic
+ * Dự báo mưa ngắn hạn dưới ràng buộc độ trễ - Logic phía client
  *
- * The page follows the course demo order: problem -> search results -> epsilon scenarios ->
- * deployment check -> multi-model benchmark. Talks to src/server.py:
- *   GET  /api/status        -> server + model readiness
- *   GET  /api/optimization  -> search history, epsilon scenarios, results/final_test_metrics.json
- *   GET  /api/models        -> rows of results/multi_model_benchmark.csv
- *   POST /api/predict       -> prediction, alert level, single-request latency breakdown
- *   POST /api/benchmark     -> P50/P95/P99 over n_runs requests
+ * Trang đi theo thứ tự demo của môn học: bài toán -> kết quả tìm kiếm -> kịch bản epsilon ->
+ * kiểm chứng triển khai -> đối chuẩn nhiều mô hình. Giao tiếp với src/server.py:
+ *   GET  /api/status        -> trạng thái sẵn sàng của server + mô hình
+ *   GET  /api/optimization  -> lịch sử tìm kiếm, kịch bản epsilon, results/final_test_metrics.json
+ *   GET  /api/models        -> các dòng của results/multi_model_benchmark.csv
+ *   POST /api/predict       -> dự báo, mức cảnh báo, phân rã độ trễ của một request đơn lẻ
+ *   POST /api/benchmark     -> P50/P95/P99 qua n_runs request
  */
 
 const LATENCY_LIMIT_MS = 5.0;
 const SAFETY_MARGIN_MS = 4.5;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 65;
 
-// Real hourly observations from the held-out Test set (H2/2025), taken from
-// data/raw via build_features(L=1). `actual` is the observed rain in the following hour.
+// Quan trắc thật theo từng giờ từ tập Test được giữ riêng (H2/2025), lấy từ
+// data/raw qua build_features(L=1). `actual` là lượng mưa quan trắc được trong giờ kế tiếp.
 const PRESETS = [
   {
     id: "dry-afternoon", icon: "☀️", name: "Chiều nắng khô",
@@ -59,7 +59,7 @@ const ALERT_COPY = {
   RED: "Mưa cực đoan",
 };
 
-// Series identity is fixed per method (categorical slots 1 and 2), never by rank.
+// Mỗi phương pháp giữ cố định một màu (ô màu phân loại số 1 và 2), không đổi màu theo thứ hạng.
 const METHODS = {
   OptunaTPE: { label: "Optuna TPE", cls: "tpe" },
   RandomSearch: { label: "Random Search", cls: "rs" },
@@ -71,7 +71,7 @@ let activePreset = PRESETS[0];
 let debounceTimer = null;
 let latestRequestId = 0;
 
-// Optimization results (filled from GET /api/optimization)
+// Kết quả tối ưu (được điền từ GET /api/optimization)
 const opt = {
   data: null,
   idx: null,
@@ -82,7 +82,7 @@ const opt = {
   scatter: null,
 };
 
-/* ---------- Helpers ---------- */
+/* ---------- Hàm tiện ích ---------- */
 
 const $ = (id) => document.getElementById(id);
 
@@ -98,8 +98,8 @@ function fmtEps(value) {
   return String(Number(value));
 }
 
-// Relative humidity from temperature and dew point (Magnus formula, Alduchov & Eskridge
-// coefficients). Rounded to an integer like the Meteostat station record.
+// Độ ẩm tương đối tính từ nhiệt độ và điểm sương (công thức Magnus, hệ số của Alduchov & Eskridge).
+// Làm tròn thành số nguyên, giống bản ghi trạm trên Meteostat.
 function relativeHumidity(temp, dwpt) {
   const a = 17.625, b = 243.04;
   const rh = 100 * Math.exp((a * dwpt) / (b + dwpt) - (a * temp) / (b + temp));
@@ -122,7 +122,7 @@ function escapeHTML(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-/* ---------- Rendering of inputs ---------- */
+/* ---------- Hiển thị đầu vào ---------- */
 
 function buildSelects() {
   const hourSel = $("select-hour");
@@ -160,7 +160,7 @@ function buildPresets() {
 }
 
 function syncInputsFromState() {
-  // dwpt cannot exceed temp: keep the slider's max in step with temperature.
+  // dwpt không được vượt temp: cho giá trị max của thanh trượt bám theo nhiệt độ.
   const dwptSlider = $("slider-dwpt");
   dwptSlider.max = String(Math.min(30, state.temp));
   if (state.dwpt > state.temp) state.dwpt = state.temp;
@@ -189,7 +189,7 @@ function syncPresetUI() {
   tag.classList.toggle("mode-real", Boolean(activePreset));
 }
 
-/* ---------- Interactions ---------- */
+/* ---------- Tương tác ---------- */
 
 function applyPreset(preset) {
   activePreset = preset;
@@ -201,7 +201,7 @@ function applyPreset(preset) {
 
 function onInputChanged(param, rawValue) {
   state[param] = param === "hour" || param === "month" ? parseInt(rawValue, 10) : parseFloat(rawValue);
-  // Any manual change means the inputs no longer match a recorded observation.
+  // Mọi thay đổi thủ công đều có nghĩa là đầu vào không còn khớp với một quan trắc đã ghi nhận.
   activePreset = null;
   syncInputsFromState();
   syncPresetUI();
@@ -219,7 +219,7 @@ function bindInputs() {
   $("btn-run-benchmark").addEventListener("click", runBenchmark);
 }
 
-// Highlight the step whose section crosses the middle of the viewport.
+// Làm nổi bật bước có section đang cắt qua giữa viewport.
 function bindStepNav() {
   const links = new Map();
   const list = document.querySelector(".step-nav-list");
@@ -230,7 +230,7 @@ function bindStepNav() {
       links.forEach((a, id) => {
         if (id === entry.target.id) {
           a.setAttribute("aria-current", "step");
-          // On narrow screens the nav scrolls sideways: keep the current step in view.
+          // Trên màn hình hẹp, thanh điều hướng cuộn ngang: giữ bước hiện tại luôn trong tầm nhìn.
           list.scrollTo({ left: a.parentElement.offsetLeft - 16, behavior: "smooth" });
         } else {
           a.removeAttribute("aria-current");
@@ -244,7 +244,7 @@ function bindStepNav() {
   });
 }
 
-/* ---------- API calls ---------- */
+/* ---------- Gọi API ---------- */
 
 async function postJSON(url, body) {
   const res = await fetch(url, {
@@ -260,7 +260,7 @@ async function postJSON(url, body) {
 }
 
 async function requestPrediction() {
-  // Responses can arrive out of order while a slider is dragged; only render the newest.
+  // Khi kéo thanh trượt, phản hồi có thể về không theo thứ tự; chỉ hiển thị phản hồi của request mới nhất.
   const requestId = ++latestRequestId;
   try {
     const data = await postJSON("/api/predict", state);
@@ -333,7 +333,7 @@ async function loadOptimization() {
   }
 }
 
-/* ---------- Rendering of outputs: deployment check ---------- */
+/* ---------- Hiển thị đầu ra: kiểm chứng triển khai ---------- */
 
 function renderPrediction(data) {
   const { pred_rain_mm, alert, latency, model_info } = data;
@@ -349,7 +349,7 @@ function renderPrediction(data) {
     $("model-meta").textContent = parts.join(" • ");
   }
 
-  // Compare against the recorded next-hour rainfall when inputs are a real observation.
+  // Khi đầu vào là một quan trắc thật, so sánh với lượng mưa đã ghi nhận ở giờ kế tiếp.
   const actualBox = $("actual-box");
   if (activePreset) {
     actualBox.hidden = false;
@@ -393,13 +393,13 @@ function renderLatency(latency) {
 
   $("lat-feature-val").textContent = `${fmt(latency.feature_ms, 3)} ms`;
   $("lat-predict-val").textContent = `${fmt(latency.predict_ms, 3)} ms`;
-  // Bars share the gauge's scale (full width = 5.0 ms) so their sizes are directly comparable.
+  // Các thanh dùng chung thang với đồng hồ đo (toàn chiều rộng = 5.0 ms) nên so sánh trực tiếp được độ dài.
   $("bar-feature").style.width = `${Math.min(100, (latency.feature_ms / LATENCY_LIMIT_MS) * 100)}%`;
   $("bar-predict").style.width = `${Math.min(100, (latency.predict_ms / LATENCY_LIMIT_MS) * 100)}%`;
 }
 
 function renderModelTable(rows) {
-  // Best value per column: lower is better for errors, higher for F1 and skill scores.
+  // Giá trị tốt nhất mỗi cột: sai số càng thấp càng tốt, F1 và skill score càng cao càng tốt.
   const best = {
     Val_RMSE: Math.min(...rows.map((r) => r.Val_RMSE)),
     Test_RMSE: Math.min(...rows.map((r) => r.Test_RMSE)),
@@ -465,12 +465,12 @@ async function runBenchmark() {
   }
 }
 
-/* ---------- Optimization results: derived data ---------- */
+/* ---------- Kết quả tối ưu: dữ liệu dẫn xuất ---------- */
 
-// Best-so-far feasible Val RMSE per seed, then mean and sample std across seeds. Mirrors
-// plot_convergence_comparison in src/evaluation/evaluate_final.py (leading trials before the first
-// feasible one take its value, like the pandas bfill there). Sample std (ddof=1) matches the
-// "mean ± std over seeds" figures reported in README / final_test_metrics.json.
+// Val RMSE tốt nhất tính đến hiện tại (chỉ xét trial khả thi) theo từng seed, rồi lấy trung bình và
+// độ lệch chuẩn mẫu qua các seed. Giống plot_convergence_comparison trong src/evaluation/evaluate_final.py
+// (các trial trước trial khả thi đầu tiên nhận giá trị của nó, như bfill của pandas ở đó). Độ lệch chuẩn
+// mẫu (ddof=1) khớp các số "trung bình ± độ lệch chuẩn qua các seed" trong README / final_test_metrics.json.
 function convergenceStats(rows) {
   const { seed: iS, trial: iT, val_rmse: iV, is_feasible: iF } = opt.idx;
   const bySeed = new Map();
@@ -487,7 +487,7 @@ function convergenceStats(rows) {
       return best;
     });
     const first = curve.find((v) => !Number.isNaN(v));
-    if (first === undefined) continue; // a seed with no feasible trial has no curve
+    if (first === undefined) continue; // seed không có trial khả thi nào thì không có đường cong
     for (let i = 0; i < curve.length && Number.isNaN(curve[i]); i++) curve[i] = first;
     curves.push(curve);
   }
@@ -504,7 +504,7 @@ function convergenceStats(rows) {
   return { mean, std, seeds: curves.length };
 }
 
-// Non-dominated set over all logged trials (lower RMSE and lower P95 are both better).
+// Tập không bị trội trên toàn bộ trial trong log (RMSE và P95 đều càng thấp càng tốt).
 function paretoFrontier(rows) {
   const { val_rmse: iV, p95_latency_ms: iP } = opt.idx;
   const sorted = [...rows].sort((a, b) => a[iP] - b[iP] || a[iV] - b[iV]);
@@ -519,8 +519,8 @@ function paretoFrontier(rows) {
   return front;
 }
 
-// Same rule as feasible_mask in src/evaluation/epsilon_scenarios.py: at the official threshold the
-// logged is_feasible flag decides (it was computed on the unrounded P95 the optimizer saw).
+// Cùng quy tắc với feasible_mask trong src/evaluation/epsilon_scenarios.py: tại ngưỡng chính thức,
+// cờ is_feasible trong log quyết định (cờ này được tính trên P95 chưa làm tròn mà bộ tối ưu đã thấy).
 function meetsEps(row, eps) {
   return eps === opt.data.constraint_ms ? Boolean(row[opt.idx.is_feasible]) : row[opt.idx.p95_latency_ms] <= eps;
 }
@@ -539,7 +539,7 @@ function epsTag(eps) {
   return "";
 }
 
-/* ---------- Optimization results: stat tiles & tables ---------- */
+/* ---------- Kết quả tối ưu: ô thống kê & bảng ---------- */
 
 function renderBudget() {
   const { seed: iS } = opt.idx;
@@ -561,7 +561,7 @@ function renderKPIs() {
   const perSeed = c.feasible_rate_comparison.phase_2_budget_100_trials.per_seed;
   const nSeeds = c.seeds_evaluated.length;
 
-  // All values below are numbers from the JSON report, formatted here (no free text from data).
+  // Mọi giá trị bên dưới là số từ báo cáo JSON, định dạng tại đây (không có văn bản tự do từ dữ liệu).
   const tiles = [
     {
       label: `Tỷ lệ trial khả thi · ${c.total_trials_per_method} trials mỗi phương pháp`,
@@ -637,7 +637,7 @@ function renderScenarioTable() {
     <tbody>${rows}</tbody>`;
 }
 
-/* ---------- Epsilon control & decision card ---------- */
+/* ---------- Bộ chọn epsilon & thẻ quyết định ---------- */
 
 function buildEpsControl() {
   const group = $("eps-control");
@@ -654,7 +654,7 @@ function buildEpsControl() {
     btn.addEventListener("click", () => selectEps(eps));
     group.appendChild(btn);
   }
-  // Radio-group keyboard model: arrows move the selection, one tab stop for the group.
+  // Điều hướng bàn phím kiểu radio group: phím mũi tên đổi lựa chọn, cả nhóm chỉ một điểm dừng Tab.
   group.addEventListener("keydown", (e) => {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
     if (!step) return;
@@ -739,7 +739,7 @@ function renderDecision(eps) {
     ${compare}`;
 }
 
-/* ---------- SVG chart primitives ---------- */
+/* ---------- Thành phần cơ bản của biểu đồ SVG ---------- */
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -778,8 +778,8 @@ function niceDomain(lo, hi, count) {
   return { d0, d1, ticks, digits: Math.max(0, -Math.floor(Math.log10(step))) };
 }
 
-// One frame per chart: an SVG sized to the container in CSS pixels (so text renders at its real
-// size), a plot rectangle inside the margins, and an HTML tooltip layered above it.
+// Mỗi biểu đồ một khung: SVG có kích thước theo container tính bằng pixel CSS (để chữ hiển thị đúng
+// cỡ thật), một hình chữ nhật vùng vẽ nằm trong lề, và một tooltip HTML đặt chồng lên trên.
 function chartFrame(container, height, margin, label) {
   const width = Math.max(280, Math.floor(container.clientWidth));
   container.replaceChildren();
@@ -813,7 +813,7 @@ function drawAxisTitles(f, yTitle, xTitle) {
   svgEl("text", { x: (f.x0 + f.x1) / 2, y: f.height - 4, "text-anchor": "middle", class: "axis-title" }, f.svg).textContent = xTitle;
 }
 
-// Keep the tooltip inside the chart box: flip to the left of the pointer near the right edge.
+// Giữ tooltip trong khung biểu đồ: khi gần mép phải thì lật sang bên trái con trỏ.
 function placeTooltip(f, px, py) {
   const tip = f.tooltip;
   tip.hidden = false;
@@ -827,7 +827,7 @@ function tooltipRow(cls, value, label) {
   return `<div class="tip-row"><i class="key-line key-${cls}" aria-hidden="true"></i><strong>${value}</strong><span>${label}</span></div>`;
 }
 
-/* ---------- Chart: convergence (best-so-far) ---------- */
+/* ---------- Biểu đồ: hội tụ (tốt nhất tính đến hiện tại) ---------- */
 
 function drawConvergence() {
   const container = $("conv-chart");
@@ -847,13 +847,13 @@ function drawConvergence() {
   drawAxisX(f, x, xTicks, String);
   drawAxisTitles(f, "Val RMSE (mm/h)", "Số trial đã chạy (mỗi seed)");
 
-  // End of Phase 1 (RQ1 equal-budget comparison)
+  // Hết Pha 1 (so sánh cùng ngân sách cho RQ1)
   if (n >= 40) {
     svgEl("line", { x1: x(40), x2: x(40), y1: f.y1, y2: f.y0, class: "ref-line" }, f.svg);
     svgEl("text", { x: x(40) + 6, y: f.y1 + 10, class: "ref-label" }, f.svg).textContent = "Hết Pha 1 (40 trials)";
   }
 
-  // Bands first, then lines; the main method is drawn last so it sits on top.
+  // Vẽ dải trước, rồi tới đường; phương pháp chính được vẽ sau cùng để nằm trên cùng.
   const drawOrder = [...series].reverse();
   for (const s of drawOrder) {
     const upper = s.mean.slice(0, n).map((v, i) => `${x(i + 1)},${y(v + s.std[i])}`);
@@ -865,7 +865,7 @@ function drawConvergence() {
     svgEl("path", { d, class: `line line-${s.cls}` }, f.svg);
   }
 
-  // Crosshair layer: snaps to the nearest trial and reads out every series at that X.
+  // Lớp crosshair: bám vào trial gần nhất và đọc giá trị của mọi chuỗi dữ liệu (series) tại X đó.
   const cross = svgEl("g", { class: "crosshair", visibility: "hidden" }, f.svg);
   const vline = svgEl("line", { y1: f.y1, y2: f.y0, class: "cross-line" }, cross);
   const dots = Object.fromEntries(series.map((s) => [s.m, svgEl("circle", { r: 4.5, class: `dot dot-${s.cls}` }, cross)]));
@@ -906,7 +906,7 @@ function drawConvergence() {
   container.onblur = hide;
 }
 
-/* ---------- Chart: solution space with the epsilon constraint ---------- */
+/* ---------- Biểu đồ: không gian nghiệm với ràng buộc epsilon ---------- */
 
 function drawScatter() {
   const container = $("pareto-chart");
@@ -921,14 +921,14 @@ function drawScatter() {
   const yd = niceDomain(Math.min(...all.map((r) => r[iV])), Math.max(...all.map((r) => r[iV])), 5);
   const y = linearScale(yd.d0, yd.d1, f.y0, f.y1);
 
-  // Violation zone (right of epsilon) sits under everything else.
+  // Vùng vi phạm (bên phải epsilon) nằm dưới mọi thành phần khác.
   const zone = svgEl("rect", { y: f.y1, height: f.y0 - f.y1, class: "zone-violate" }, f.svg);
   drawGridY(f, y, yd.ticks, yd.digits);
   const xTicks = [1, 2, 5, 10, 20, 50, 100, 200, 500].filter((t) => t >= xDomain[0] && t <= xDomain[1]);
   drawAxisX(f, x, xTicks, String);
   drawAxisTitles(f, "Val RMSE (mm/h)", "P₉₅ độ trễ pha tìm kiếm (ms, thang log)");
 
-  // Random Search first so the main method's points sit on top.
+  // Vẽ Random Search trước để các điểm của phương pháp chính nằm trên cùng.
   const points = [];
   const gPts = svgEl("g", { class: "points" }, f.svg);
   for (const m of [...METHOD_ORDER].reverse()) {
@@ -940,7 +940,7 @@ function drawScatter() {
     }
   }
 
-  // The frontier hugs the densest band of points, so it is drawn above them to stay visible.
+  // Biên Pareto bám sát dải điểm dày nhất, nên được vẽ đè lên các điểm để vẫn nhìn thấy được.
   const front = opt.pareto.map((p) => ({ px: x(p.x), py: y(p.y) }));
   let d = `M${front[0].px},${front[0].py}`;
   for (let i = 1; i < front.length; i++) d += `H${front[i].px}V${front[i].py}`;
@@ -948,12 +948,12 @@ function drawScatter() {
 
   const epsLine = svgEl("line", { y1: f.y1, y2: f.y0, class: "eps-line" }, f.svg);
   const epsLabel = svgEl("text", { y: f.y1 - 8, class: "eps-label" }, f.svg);
-  // Main method's ring last so it is on top when both selections sit close together.
+  // Vẽ vòng của phương pháp chính sau cùng để nó nằm trên khi hai điểm được chọn ở sát nhau.
   const rings = Object.fromEntries([...METHOD_ORDER].reverse().map((m) => [m, svgEl("circle", { r: 8, class: `sel-ring sel-${METHODS[m].cls}` }, f.svg)]));
   const hover = svgEl("circle", { r: 6, class: "pt-hover", visibility: "hidden" }, f.svg);
   const hit = svgEl("rect", { x: f.x0, y: f.y1, width: f.x1 - f.x0, height: f.y0 - f.y1, class: "hit" }, f.svg);
 
-  // Nearest-point hover: the pointer only has to be closest (within 24px), not on the dot.
+  // Hover theo điểm gần nhất: con trỏ chỉ cần ở gần điểm nhất (trong vòng 24px), không cần trỏ trúng điểm.
   hit.addEventListener("pointermove", (e) => {
     const box = f.svg.getBoundingClientRect();
     const mx = e.clientX - box.left;
@@ -1036,7 +1036,7 @@ function observeChartResize() {
   ro.observe($("pareto-chart"));
 }
 
-/* ---------- Boot ---------- */
+/* ---------- Khởi động ---------- */
 
 document.addEventListener("DOMContentLoaded", () => {
   buildSelects();

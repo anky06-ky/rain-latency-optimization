@@ -1,10 +1,10 @@
-# Project Configuration: Rainfall Forecasting under Inference Latency Constraint
-# Station: Tan Son Nhat (WMO ID: 48900)
+# Cấu hình dự án: Dự báo lượng mưa dưới ràng buộc độ trễ suy luận
+# Trạm: Tân Sơn Nhất (WMO ID: 48900)
 #
-# NOTE: This file documents the experimental setup; it is not loaded by the code.
-# The effective values live as constants in src/ (build_features.py split dates,
-# latency.py LATENCY_CONSTRAINT_MS, optimize_*.py WINDOW_CANDIDATES / DEFAULT_SEEDS).
-# Editing this file does not change any experiment.
+# LƯU Ý: File này ghi lại thiết lập thí nghiệm; code không nạp file này.
+# Các giá trị thực sự có hiệu lực là hằng số trong src/ (ngày chia tập trong build_features.py,
+# LATENCY_CONSTRAINT_MS trong latency.py, WINDOW_CANDIDATES / DEFAULT_SEEDS trong optimize_*.py).
+# Sửa file này không làm thay đổi bất kỳ thí nghiệm nào.
 
 project:
   name: "Rainfall Forecasting under Inference Latency Constraint"
@@ -53,8 +53,8 @@ search_space:
     min_child_samples: [10, 100]
 
 budget:
-  fair_comparison_trials_per_seed: 40  # RQ1: Direct apples-to-apples comparison under equal low budget
-  scaling_trials_per_seed: 100         # RQ2: Convergence and saturation study
+  fair_comparison_trials_per_seed: 40  # RQ1: So sánh trực tiếp, công bằng với cùng một ngân sách thấp
+  scaling_trials_per_seed: 100         # RQ2: Khảo sát hội tụ và bão hòa
   seeds: [42, 123, 456, 789, 2026]
   total_evaluations: 500
 

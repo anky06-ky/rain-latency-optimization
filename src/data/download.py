@@ -1,27 +1,27 @@
 """
-Download historical hourly weather observations for Tan Son Nhat Station (WMO 48900).
+Tải dữ liệu quan trắc thời tiết lịch sử theo giờ của trạm Tân Sơn Nhất (WMO 48900).
 
-Data Source: Meteostat (https://meteostat.net/)
-Station ID: 48900 (VVTS - Tan Son Nhat Airport, Ho Chi Minh City)
-Coordinates: Lat 10.8167, Lon 106.6667, Alt 10m
-License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Citation: Meteostat Developers (2026). Hourly Weather Data for Station 48900.
-          Retrieved 2026-10-29 via meteostat 1.6.5; the file used for the reported results holds
-          45,944 hourly records from 2021-01-01 00:00 to 2026-03-30 07:00 (Asia/Ho_Chi_Minh).
+Nguồn dữ liệu: Meteostat (https://meteostat.net/)
+Mã trạm: 48900 (VVTS - Sân bay Tân Sơn Nhất, TP. Hồ Chí Minh)
+Tọa độ: Vĩ độ 10.8167, Kinh độ 106.6667, Độ cao 10m
+Giấy phép: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Trích dẫn: Meteostat Developers (2026). Hourly Weather Data for Station 48900.
+           Truy xuất ngày 2026-10-29 bằng meteostat 1.6.5; file dùng cho các kết quả đã báo cáo chứa
+           45,944 bản ghi theo giờ từ 2021-01-01 00:00 đến 2026-03-30 07:00 (Asia/Ho_Chi_Minh).
 """
 
 from datetime import datetime
 from pathlib import Path
 import warnings
 
-# Monkeypatch for numpy 2.x compatibility with meteostat 1.6.5
+# Monkeypatch giúp meteostat 1.6.5 tương thích với NumPy 2.x
 import numpy as np
 if not hasattr(np, "NaN"):
     np.NaN = np.nan
 
 from meteostat import Hourly
 
-# Filter deprecated pandas parse_dates warning emitted by legacy meteostat versions
+# Lọc bỏ cảnh báo lỗi thời (deprecated) về parse_dates của pandas do các phiên bản meteostat cũ phát ra
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 STATION_ID = "48900"
@@ -34,7 +34,7 @@ OUTPUT_FILE = OUTPUT_DIR / "weather_meteostat_2021_2026.csv"
 
 
 def download_meteostat_data():
-    """Fetch hourly weather records from Meteostat API and save to CSV."""
+    """Lấy dữ liệu thời tiết theo giờ từ API của Meteostat và lưu ra file CSV."""
     print("=" * 65)
     print(f"Downloading Meteostat observations for Station {STATION_ID}")
     print(f"Period: {START_DATE.strftime('%Y-%m-%d')} -> {END_DATE.strftime('%Y-%m-%d')}")
@@ -43,17 +43,17 @@ def download_meteostat_data():
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Query Meteostat hourly endpoint
+    # Truy vấn endpoint dữ liệu theo giờ của Meteostat
     query = Hourly(STATION_ID, START_DATE, END_DATE, timezone=TIMEZONE)
     df = query.fetch()
 
     if df.empty:
         raise RuntimeError(f"No records retrieved for station {STATION_ID} in requested range.")
 
-    # Reset index so 'time' becomes an explicit column
+    # Đặt lại chỉ mục để 'time' trở thành một cột tường minh
     df = df.reset_index()
 
-    # Save to raw storage
+    # Lưu vào thư mục dữ liệu thô
     df.to_csv(OUTPUT_FILE, index=False)
 
     print("\n[+] Download completed successfully!")
