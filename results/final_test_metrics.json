@@ -30,19 +30,47 @@
     "variance_reduction_vs_100_trial_rs_pct": 57.6,
     "feasible_rate_comparison": {
       "phase_1_budget_40_trials": {
-        "optuna_feasible_count": 119,
-        "optuna_feasible_rate_pct": 59.5,
+        "optuna_feasible_count": 118,
+        "optuna_feasible_rate_pct": 59.0,
         "random_feasible_count": 78,
         "random_feasible_rate_pct": 39.0,
-        "gain_percentage_points": 20.5
+        "gain_percentage_points": 20.0
       },
       "phase_2_budget_100_trials": {
         "threshold_5_0_ms": {
-          "optuna_feasible_count": 313,
-          "optuna_feasible_rate_pct": 62.6,
+          "optuna_feasible_count": 312,
+          "optuna_feasible_rate_pct": 62.4,
           "random_feasible_count": 243,
           "random_feasible_rate_pct": 48.6,
-          "gain_percentage_points": 14.0
+          "gain_percentage_points": 13.8,
+          "fisher_exact_p_value": 1.4662e-05,
+          "chi2_statistic": 18.723,
+          "chi2_p_value": 1.5118e-05,
+          "odds_ratio": 1.755,
+          "difference_95_ci_pct": [
+            7.7,
+            19.9
+          ]
+        },
+        "per_seed": {
+          "optuna_feasible_counts": {
+            "42": 66,
+            "123": 53,
+            "456": 69,
+            "789": 71,
+            "2026": 53
+          },
+          "random_feasible_counts": {
+            "42": 26,
+            "123": 42,
+            "456": 48,
+            "789": 66,
+            "2026": 61
+          },
+          "seeds_optuna_ahead": 4,
+          "wilcoxon_p_value": 0.1875,
+          "paired_t_statistic": 1.7125,
+          "paired_t_p_value": 0.162
         },
         "safety_margin_4_5_ms": {
           "optuna_feasible_count": 251,
@@ -63,24 +91,24 @@
     "rain_event_f1": 0.5882,
     "train_val_gap": 0.0075,
     "train_test_gap": 0.3531,
-    "generalization_notes": "Train-Val gap is minimal (+0.0075 mm/h). The increase on Test set is driven by seasonal climate distribution shift during the peak monsoon."
+    "generalization_notes": "Train-Val gap is +0.0075 mm/h. The increase on Test set is driven by seasonal climate distribution shift during the peak monsoon."
   },
   "skill_scores_on_test": {
     "skill_score_vs_persistence_pct": 24.88,
-    "skill_score_vs_climatology_pct": 17.58
+    "skill_score_vs_climatology_pct": 4.74
   },
   "latency_compliance": {
-    "test_p95_latency_ms": 1.041,
+    "test_p95_latency_ms": 0.683,
     "test_p95_latency_range_ms": [
-      1.003,
-      1.152
+      0.664,
+      0.753
     ],
     "all_runs_p95_ms": [
-      1.024,
-      1.121,
-      1.041,
-      1.003,
-      1.152
+      0.753,
+      0.722,
+      0.683,
+      0.664,
+      0.675
     ],
     "sla_constraint_threshold_ms": 5.0,
     "sla_satisfied": true,
