@@ -6,6 +6,8 @@ Station ID: 48900 (VVTS - Tan Son Nhat Airport, Ho Chi Minh City)
 Coordinates: Lat 10.8167, Lon 106.6667, Alt 10m
 License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
 Citation: Meteostat Developers (2026). Hourly Weather Data for Station 48900.
+          Retrieved 2026-10-29 via meteostat 1.6.5; the file used for the reported results holds
+          45,944 hourly records from 2021-01-01 00:00 to 2026-03-30 07:00 (Asia/Ho_Chi_Minh).
 """
 
 from datetime import datetime

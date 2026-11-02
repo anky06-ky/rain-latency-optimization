@@ -1,5 +1,10 @@
 # Project Configuration: Rainfall Forecasting under Inference Latency Constraint
 # Station: Tan Son Nhat (WMO ID: 48900)
+#
+# NOTE: This file documents the experimental setup; it is not loaded by the code.
+# The effective values live as constants in src/ (build_features.py split dates,
+# latency.py LATENCY_CONSTRAINT_MS, optimize_*.py WINDOW_CANDIDATES / DEFAULT_SEEDS).
+# Editing this file does not change any experiment. config.json mirrors it.
 
 project:
   name: "Rainfall Forecasting under Inference Latency Constraint"
@@ -63,7 +68,7 @@ optimal_solution:
   min_child_samples: 20
   val_rmse: 0.8318
   test_rmse: 1.1774
-  p95_latency_ms: 1.04
-  p95_latency_range_ms: [1.00, 1.15]
+  p95_latency_ms: 0.683
+  p95_latency_range_ms: [0.66, 0.75]
   rain_event_f1: 0.5882
   status: "Feasible (<= 5.0 ms SLA, <= 4.5 ms safety margin)"
