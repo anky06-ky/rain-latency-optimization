@@ -13,7 +13,7 @@
 
 Dự báo lượng mưa cực ngắn (nowcasting) 1 giờ tới tại các trạm quan trắc đô thị đóng vai trò cốt lõi trong việc tự động hóa trạm bơm và cảnh báo ngập lụt tại TP. Hồ Chí Minh. Tuy nhiên, trong các kiến trúc biên (Edge IoT), mô hình không chỉ đòi hỏi sai số thấp mà phải thỏa mãn nghiêm ngặt giới hạn độ trễ từ đầu-đến-cuối (End-to-End SLA $T_{\text{e2e}} \le 5.0\text{ ms}$). Nghiên cứu này mô hình hóa bài toán dưới dạng **Tối ưu hóa có Ràng buộc (Constrained Optimization)**, đồng thời tìm kiếm chiều dài cửa sổ lịch sử $L \in \{1, \dots, 72\}$ giờ và không gian siêu tham số $\theta$ của LightGBM. Dữ liệu được kiểm toán từ trạm Tân Sơn Nhất (WMO 48900) giai đoạn 2023–2025 (26.304 giờ) với cổng kiểm soát chất lượng (Missing Rate 2.13% $\le 5\%$) và điền khuyết nhân quả (causal imputation). 
 
-Thực nghiệm đối sánh công bằng trên 5 random seeds (tổng 1.000 trials) chứng minh rằng: Thuật toán Bayesian Optimization qua **Optuna TPE** đạt tỷ lệ khả thi vượt trội (+14.0 điểm phần trăm ở ngưỡng 5.0 ms và +17.2 điểm phần trăm ở biên an toàn 4.5 ms) so với Random Search. Đáng chú ý, Optuna tự động phát hiện ra cấu hình kiến trúc tinh gọn $L^* = 1$ giờ (chỉ 10 đặc trưng), giúp cắt giảm **78% kích thước bộ nhớ đệm trạng thái chuỗi thời gian** so với cấu hình $L=6$ của Random Search mà vẫn duy trì Test RMSE 1.1774 mm/h, $F_1 = 0.5882$ và Skill Score 24.88%. Khi triển khai qua C-API ngầm định, độ trễ thực tế chỉ đạt **1.04 ms**, thỏa mãn an toàn biên vận hành. Toàn bộ mã nguồn đạt 100% kiểm thử tính tương đồng (Parity Test sai lệch $0.0$) và tự động hóa qua CI/CD GitHub Actions trên Python 3.13.
+Thực nghiệm đối sánh công bằng trên 5 random seeds (tổng 1.000 trials) chứng minh rằng: Thuật toán Bayesian Optimization qua **Optuna TPE** đạt tỷ lệ khả thi vượt trội (+14.0 điểm phần trăm ở ngưỡng 5.0 ms và +17.2 điểm phần trăm ở biên an toàn 4.5 ms) so với Random Search. Đáng chú ý, Optuna tự động phát hiện ra cấu hình kiến trúc tinh gọn $L^* = 1$ giờ (10 đặc trưng), giúp cắt giảm **77.8% số chiều đặc trưng** (từ 45 xuống 10) và **83.3% số hàng bộ nhớ đệm chuỗi thời gian** (từ 6 giờ xuống 1 giờ quan trắc) so với cấu hình $L=6$ của Random Search mà vẫn duy trì Test RMSE 1.1774 mm/h, $F_1 = 0.5882$ và Skill Score 24.88%. Khi triển khai qua C-API ngầm định, độ trễ thực tế chỉ đạt **1.04 ms**, thỏa mãn an toàn biên vận hành. Toàn bộ mã nguồn đạt 100% kiểm thử tính tương đồng (Parity Test sai lệch $< 10^{-5}$, tương đương 0.0 trong độ chính xác float32) và tự động hóa qua CI/CD GitHub Actions trên Python 3.13.
 
 **Từ khóa:** *Dự báo lượng mưa thời gian thực; Tối ưu hóa có ràng buộc; Độ trễ suy luận biên; Optuna TPE; Cửa sổ lịch sử đặc trưng; LightGBM C-API; Ngập lụt đô thị TP.HCM.*
 
@@ -134,8 +134,8 @@ Nghiên cứu áp dụng hệ thống độ đo toàn diện gồm:
 | Tiêu chí Kiến trúc | Cấu hình Random Search ($L=6$) | Cấu hình Optuna Champion ($L=1$) | Đánh giá Kỹ thuật |
 | :--- | :---: | :---: | :--- |
 | **Chiều dài Cửa sổ Lịch sử ($L$)** | 6 giờ quá khứ liên tục | **1 giờ quá khứ duy nhất** | Optuna tối giản thời gian đệm |
-| **Số chiều Vector Đặc trưng** | 45 đặc trưng (lags + rolling) | **10 đặc trưng** (lags + sin/cos) | **Giảm 78% số chiều đặc trưng** |
-| **Bộ nhớ đệm Chuỗi Thời gian (RAM)** | Circular Buffer chứa 6 bản ghi | Lưu đúng 1 bản ghi gần nhất | Phù hợp tuyệt đối với vi điều khiển |
+| **Số chiều Vector Đặc trưng** | 45 đặc trưng (lags + rolling) | **10 đặc trưng** (lags + sin/cos) | **Giảm 77.8% số chiều đặc trưng** (10 vs 45) |
+| **Bộ nhớ đệm Chuỗi Thời gian (RAM)** | Circular Buffer chứa 6 bản ghi | Lưu đúng 1 bản ghi gần nhất | **Giảm 83.3% số hàng đệm** (1 vs 6 giờ quan trắc) |
 | **Thời gian Trích xuất ($T_{\text{feat}}$)** | $\approx 0.35\text{ ms}$ | $\approx \mathbf{0.05\text{ ms}}$ | Tốc độ trích xuất nhanh gấp 7 lần |
 | **Ý nghĩa Vật lý Khí quyển** | Thừa thãi thông tin quá khứ | Nắm bắt đúng trạng thái nhiệt ẩm | Mưa đối lưu nhiệt đới bùng phát nhanh |
 
@@ -208,23 +208,24 @@ Cả Optuna TPE và Random Search đều được cấp phát chung chính xác 
 | **Số nghiệm khả thi SLA ($T_{\text{e2e}} \le 5.0\text{ ms}$)** | 243 / 500 (48.6%) | **313 / 500 (62.6%)** | **Optuna cao hơn +14.0 điểm phần trăm (pp)** |
 | **Số nghiệm khả thi Biên an toàn ($T_{\text{e2e}} \le 4.5\text{ ms}$)** | 165 / 500 (33.0%) | **251 / 500 (50.2%)** | **Optuna cao hơn +17.2 điểm phần trăm (pp)** |
 | **Tỷ lệ khả thi Phase 1 (40 trials/seed)** | 78 / 200 (39.0%) | **119 / 200 (59.5%)** | **Optuna cao hơn +20.5 điểm phần trăm (pp)** |
+| **Kiểm định Fisher's Exact Test (Feasible Rate SLA)** | — | — | **$p = 1.09 \times 10^{-5} < 0.001$, OR = 1.77** (Bác bỏ $H_0$, 95% CI: $[+7.9\%, +20.1\%]$) |
 | **Validation RMSE trong Trial History** | **0.8290 mm/h** (seed 42) | 0.8297 mm/h (seed 456) | Chênh lệch cực nhỏ ($\le 0.0007\text{ mm/h}$) |
 | **Validation RMSE khi Retrain xác nhận** | **0.8290 mm/h** | 0.8318 mm/h | Chênh lệch cực nhỏ ($\le 0.0028\text{ mm/h}$) |
 | **Validation RMSE trung bình qua 5 seeds** | $0.8306 \pm 0.0017$ | **$0.8301 \pm 0.0007$** | Độ ổn định của Optuna cao hơn |
 | **Độ lệch chuẩn qua 5 seeds (Std)** | Std = 0.0017 | **Std = 0.0007** | **Quan sát thấy giảm phương sai 57.6%** |
-| **Kiểm định Paired Student's t-test (5 seeds)** | — | — | **$t = 0.4527, p = 0.6742 > 0.05$** (Chấp nhận $H_0$) |
-| **Cửa sổ lịch sử tối ưu ($L^*$)** | $L=6$ giờ (45 đặc trưng) | **$L=1$ giờ (10 đặc trưng)** | **Giảm 78% kích thước bộ nhớ đệm** |
+| **Kiểm định Paired Student's t-test (5 seeds)** | — | — | **$t = 0.4527, p = 0.6742 > 0.05$** (Không bác bỏ $H_0$) |
+| **Cửa sổ lịch sử tối ưu ($L^*$)** | $L=6$ giờ (45 đặc trưng) | **$L=1$ giờ (10 đặc trưng)** | **Giảm 77.8% số chiều đặc trưng, giảm 83.3% số hàng đệm** |
 | **Độ trễ End-to-End Champion (C-API)** | 1.180 ms | **1.041 ms** [1.00, 1.15] | Thỏa mãn an toàn SLA 5.0 ms & biên 4.5 ms |
 
 ![Biên Pareto](results/figures/pareto_frontier.png)
 ![Đường cong hội tụ](results/figures/convergence_comparison.png)
 
 ### 6.3. Thảo luận về Kiểm định Thống kê & Tính Logic của Ràng buộc
-1. **Về Sai số Thẩm định (Val RMSE):** Kiểm định Student's t-test cặp đôi cho giá trị $t = 0.4527, p = 0.6742 > 0.05$. Điều này chứng minh rằng về mặt thống kê thuần túy, **hai phương pháp cho sai số Validation tương đương nhau**. Bề mặt hàm mất mát quanh vùng tối ưu khá phẳng (nhiều cấu hình khác nhau đều đạt RMSE quanh 0.829–0.831 mm/h). Nhiễu tái huấn luyện do hạt giống (~0.002) tương đương khoảng cách giữa hai thuật toán.
-2. **Ưu thế Cốt lõi của Optuna TPE:** Giá trị vượt trội của Optuna TPE không nằm ở việc khẳng định hơn về sai số, mà nằm ở **Năng lực Định hướng Không gian Tìm kiếm**: TPE đạt tỷ lệ nghiệm khả thi cao hơn rõ rệt (+14.0 pp ở ngưỡng 5 ms; +17.2 pp ở biên an toàn 4.5 ms; và +20.5 pp ở ngân sách Phase 1), đồng thời tự động phát hiện ra giải pháp cực kỳ tinh gọn $L=1$ (10 đặc trưng so với 45 đặc trưng của Random Search).
+1. **Về Sai số Thẩm định (Val RMSE):** Kiểm định Student's t-test cặp đôi cho giá trị $t = 0.4527, p = 0.6742 > 0.05$. Điều này chứng minh rằng về mặt thống kê, **không có đủ bằng chứng để bác bỏ $H_0$ (hai phương pháp cho sai số Validation tương đương nhau)**. Bề mặt hàm mất mát quanh vùng tối ưu khá phẳng (nhiều cấu hình khác nhau đều đạt RMSE quanh 0.829–0.831 mm/h). Nhiễu tái huấn luyện do hạt giống (~0.002) tương đương khoảng cách giữa hai thuật toán.
+2. **Ưu thế Cốt lõi & Kiểm định Ý nghĩa Thống kê của Tỷ lệ Khả thi:** Giá trị vượt trội của Optuna TPE nằm ở **Năng lực Định hướng Không gian Tìm kiếm**: TPE đạt tỷ lệ nghiệm khả thi cao hơn rõ rệt (+14.0 pp ở ngưỡng 5 ms; +17.2 pp ở biên an toàn 4.5 ms; và +20.5 pp ở ngân sách Phase 1). Kiểm định Fisher's exact test trên toàn bộ 1.000 trials (500 Optuna vs 500 RS) xác nhận mức tăng +14.0 pp đạt mức ý nghĩa thống kê cực kỳ thuyết phục ($p = 1.09 \times 10^{-5} \ll 0.001$, Pearson $\chi^2 = 19.286$, Odds Ratio = 1.77, khoảng tin cậy 95% cho mức chênh lệch là $[+7.9\%, +20.1\%]$). Khi phân rã theo 5 hạt giống độc lập, Optuna vượt trội ở 4/5 seeds (với mức chênh lệch lên tới +40 pp ở seed 42; kiểm định Wilcoxon signed-rank $W = 2.0, p = 0.1875$, paired $t$-test $p = 0.1553$). Đồng thời, thuật toán tự động phát hiện ra giải pháp cực kỳ tinh gọn $L=1$ (10 đặc trưng so với 45 đặc trưng của Random Search).
 3. **Bản chất Hai Thang đo Độ trễ (Search Wrapper vs Production C-API):**
-   * *Khi tìm kiếm:* Sử dụng wrapper tiêu chuẩn Scikit-learn (`LGBMRegressor.predict`) với độ trễ trung vị ~4.49 ms. Nhóm cố tình duy trì thước đo này để tạo ra một **"bộ lọc khắc nghiệt"** ép thuật toán phải đào thải 37.4% nghiệm Optuna và 51.4% nghiệm Random Search cồng kềnh.
-   * *Khi triển khai thực tế:* Chuyển sang gọi C-API ngầm định `model.booster_.predict(feat_vector)`, loại bỏ hoàn toàn chi phí validate DataFrame của Python, đưa độ trễ đơn mẫu xuống **1.04 ms**. Nhờ đó, hệ thống sở hữu một biên an toàn vận hành rất rộng ($4.5 - 1.04 = 3.46\text{ ms}$) chống trễ biến thiên phần cứng.
+   * *Khi tìm kiếm (Search Phase):* Ràng buộc cho mỗi trial $x$ là $g(x) = P_{95}(T_{\text{e2e}}(x)) \le 5.0\text{ ms}$, đo lường phân vị thứ 95 qua 100 lần lặp. Thước đo được thực thi qua Scikit-learn wrapper tiêu chuẩn (`LGBMRegressor.predict`) để phản ánh quy trình AutoML thông thường. Do chi phí kiểm tra kiểu và DataFrame wrapper của Python, **trung vị của các giá trị phân vị $P_{95}$ trên toàn bộ 500 trials trong nhật ký tìm kiếm là ~4.49 ms** (nhiều trial vượt từ 5 ms đến 40 ms khi $L$ lớn và cây sâu). Ràng buộc $P_{95} \le 5.0\text{ ms}$ đóng vai trò một **"bộ lọc khắc nghiệt"** ép thuật toán phải đào thải 37.4% nghiệm Optuna và 51.4% nghiệm Random Search cồng kềnh.
+   * *Khi triển khai thực tế (Production Phase):* Chuyển sang gọi C-API ngầm định `model.booster_.predict(feat_vector)`, loại bỏ hoàn toàn chi phí validate DataFrame của Python, đưa độ trễ đơn mẫu xuống **1.04 ms** (range [1.00, 1.15] ms). Nhờ đó, hệ thống sở hữu một biên an toàn vận hành rất rộng ($4.5 - 1.04 = 3.46\text{ ms}$) chống trễ biến thiên phần cứng.
 4. **Giảm Phương sai Thực nghiệm:** Mức giảm độ lệch chuẩn từ 0.0017 xuống 0.0007 (giảm 57.6%) là một quan sát thực nghiệm có giá trị trên 5 seeds khảo sát, thể hiện tính ổn định lấy mẫu của mô hình xác suất TPE.
 
 ### 6.4. Giải mã Hiện tượng Chuyển dịch Phân phối Mùa Khí hậu (Seasonal Shift)
@@ -245,7 +246,7 @@ Khi phương sai tự nhiên của chuỗi thời gian tăng hơn 40%, sai số 
 ### 7.1. Kiểm thử Tính tương đương Tuyệt đối (Parity Test Against Train-Serving Skew)
 Trong công nghệ MLOps, lỗi nghiêm trọng nhất là độ lệch giữa lúc huấn luyện (Batch Pandas) và lúc triển khai (Single-Sample NumPy Array). Nhóm đã thiết kế ca kiểm thử tự động `test_feature_parity_batch_vs_single_sample` trong [test_pipeline.py](file:///d:/rain-latency-optimization/tests/test_pipeline.py):
 * Kiểm tra tương đồng vector đặc trưng trên toàn bộ các mức $L \in \{1, 6, 24, 72\}$: sai lệch vector $\le 1.9 \times 10^{-6}$;
-* Kiểm tra đầu ra dự báo của Champion Model trên 25 mẫu ngẫu nhiên: **độ chênh lệch dự báo bằng $0.0$ tuyệt đối** ($< 10^{-5}$).
+* Kiểm tra đầu ra dự báo của Champion Model trên 25 mẫu ngẫu nhiên: **độ chênh lệch dự báo $< 10^{-5}$** (thực tế đo được $0.0$ ở mức làm tròn 5 chữ số thập phân, triệt tiêu hoàn toàn sai lệch số học).
 
 ### 7.2. Tích hợp Liên tục (CI/CD) trên GitHub Actions với Python 3.13
 Repository được cấu hình quy trình CI tự động ([.github/workflows/ci.yml](file:///d:/rain-latency-optimization/.github/workflows/ci.yml)) trên môi trường Ubuntu với Python 3.13. Mỗi commit được tự động kiểm toán dependency, tải dữ liệu Meteostat, chạy 6 ca unit test nghiêm ngặt và kiểm tra demo suy luận. Trạng thái hiện tại: **100% Passed (Green ✔)**.
@@ -269,7 +270,7 @@ Nhóm đã xây dựng một Web Application hoàn chỉnh (`src/server.py` và 
 Nghiên cứu đã giải quyết thành công bài toán tối ưu hóa siêu tham số và chiều sâu đặc trưng có ràng buộc độ trễ thời gian thực cho dự báo lượng mưa ngắn hạn tại trạm Tân Sơn Nhất. Các đóng góp chính gồm:
 1. **Thiết lập bài toán tối ưu hóa có ràng buộc chặt chẽ:** Phối hợp giữa $L$ và $\theta$ với ràng buộc $T_{\text{e2e}} \le 5.0\text{ ms}$ (biên an toàn $\le 4.5\text{ ms}$).
 2. **Minh chứng ưu thế của Optuna TPE:** Đạt tỷ lệ khả thi vượt trội (+14.0 pp) và giảm phương sai thực nghiệm 57.6% qua 5 random seeds.
-3. **Khám phá kiến trúc tinh gọn $L=1$:** Giảm 78% bộ nhớ đệm chuỗi thời gian, đạt Test RMSE 1.1774 mm/h, $F_1 = 0.5882$, độ trễ C-API 1.04 ms.
+3. **Khám phá kiến trúc tinh gọn $L=1$:** Giảm 77.8% số chiều đặc trưng và giảm 83.3% số hàng bộ nhớ đệm chuỗi thời gian, đạt Test RMSE 1.1774 mm/h, $F_1 = 0.5882$, độ trễ C-API 1.04 ms.
 4. **Đảm bảo tính tái lập chuẩn mực:** Hệ thống mã nguồn mở hoàn chỉnh, 100% unit tests pass, đi kèm Web Dashboard tương tác thực tế.
 
 ---
