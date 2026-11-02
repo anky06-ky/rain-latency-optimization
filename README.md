@@ -42,7 +42,7 @@ The core of this project is formulated as a **Constrained Hyperparameter and Fea
 
 $$\begin{aligned}
 \min_{x = (L, \theta)} \quad & f(x) = \text{RMSE}_{\text{val}}(L, \theta) \\
-\text{subject to} \quad & T_{\text{e2e}}(L, \theta) \le 5.0\text{ ms} \quad (\text{Internal Safety Margin: } T_{\text{e2e}} \le 4.5\text{ ms}) \\
+\text{subject to} \quad & g(x) = P_{95}\left( T_{\text{e2e}}(x) \right) \le 5.0\text{ ms} \quad (\text{Internal Safety Margin: } \le 4.5\text{ ms}) \\
 & L \in \{1, 2, 3, 6, 12, 24, 36, 48, 72\} \text{ (hours)} \\
 & \theta \in \Theta \text{ (LightGBM hyperparameters)}
 \end{aligned}$$
@@ -63,12 +63,13 @@ To ensure the latency constraint reflects real-world deployment, latency is eval
 $$T_{\text{e2e}} = T_{\text{feature\_transform}}(L) + T_{\text{predict}}(\theta)$$
 * **Tối ưu hóa tầng suy luận:** Sử dụng `model.booster_.predict` trực tiếp trên mảng NumPy thay vì qua wrapper Scikit-learn, loại bỏ hoàn toàn overhead kiểm tra kiểu dữ liệu và cảnh báo tên cột của Python.
 * **Biên an toàn nội bộ (Safety Margin):** Ràng buộc SLA hệ thống là $5.0\text{ ms}$, nhưng quy trình tối ưu đặt mục tiêu biên an toàn nội bộ $\le 4.5\text{ ms}$ nhằm đảm bảo mô hình luôn khả thi ngay cả khi chịu ảnh hưởng bởi nhiễu điều tiết xung nhịp CPU trên máy trạm dùng chung.
-* **Đo lường đa lượt (Multi-run Stability):** Mô hình champion được đo lường qua 5 phiên độc lập (mỗi phiên 100 lần lặp sau 20 lần warmup) và báo cáo giá trị trung vị (median) cùng khoảng dao động $[\min, \max]$.
+* **Đo lường đa lượt (Multi-run Stability):** Mô hình champion được đo lường qua 5 phiên độc lập (mỗi phiên 100 lần lặp sau 20 lần warmup) và báo cáo giá trị trung vị (median) cùng khoảng dao động $[\min, \max]$. Bộ thu gom rác (GC) của Python được tạm dừng trong vòng đo (giống `timeit`) để loại nhiễu GC khỏi đuôi $P_{95}$.
 
 ### Two-Tier Experimental Budget Protocol
-* **Phase 1: Equal-Budget Comparison (RQ1):** Benchmark Random Search vs Optuna TPE at **40 trials per seed** across 5 random seeds (`42, 123, 456, 789, 2026`) — total 200 evaluations per method. Optuna achieves **59.0% feasible rate** vs **39.0%** for Random Search (**+20.0 điểm phần trăm (pp)**).
-* **Phase 2: Budget Scaling & Convergence Analysis (RQ2):** Scale budget up to **100 trials per seed $\times$ 5 seeds = 500 trials** per method (1,000 total evaluations). Optuna stabilizes convergence variance by $-75.8\%$ compared to the 40-trial baseline ($\sigma = 0.0029 \to 0.0007$) and by $-57.6\%$ compared to 100-trial Random Search ($\sigma = 0.0017 \to 0.0007$). Optuna achieves **40.0% feasible rate** vs **26.2%** for Random Search (**+13.8 điểm phần trăm (pp)**).
+* **Phase 1: Equal-Budget Comparison (RQ1):** Random Search vs Optuna TPE at **40 trials per seed** across 5 random seeds (`42, 123, 456, 789, 2026`) — total 200 evaluations per method. Phase 1 is read from the **first 40 trials of each 100-trial run** (TPE does not know the total budget, so its first 40 proposals are identical to a standalone 40-trial run). Optuna achieves **59.0% feasible rate** (118/200) vs **39.0%** (78/200) for Random Search (**+20.0 pp**). At this budget the best feasible Val RMSE is the same for both methods ($0.8325 \pm 0.0029$).
+* **Phase 2: Budget Scaling & Convergence Analysis (RQ2):** Scale budget up to **100 trials per seed $\times$ 5 seeds = 500 trials** per method (1,000 total evaluations). Across seeds, the spread of Optuna's best Val RMSE shrinks from $\sigma = 0.0029$ (40 trials) to $\sigma = 0.0007$ (100 trials), versus $\sigma = 0.0017$ for 100-trial Random Search ($-57.6\%$). Optuna achieves **62.4% feasible rate** (312/500) vs **48.6%** (243/500) for Random Search (**+13.8 pp**).
 * **Selection Rule:** Chọn nghiệm có validation RMSE thấp nhất trong tập các cấu hình khả thi ($T_{\text{e2e}} \le 5.0\text{ ms}$).
+* **ε-constraint:** Về phương pháp, bài toán trên là dạng **ε-constraint** của bài toán hai mục tiêu (min RMSE, min độ trễ) với $\varepsilon = 5.0\text{ ms}$. Mục 4.4 giải lại bài toán với nhiều mức $\varepsilon$ để ra quyết định theo kịch bản triển khai.
 * **Test Evaluation:** Đánh giá đúng 1 lần duy nhất trên tập Test (H2/2025) để đối chuẩn khách quan.
 
 ---
@@ -123,26 +124,31 @@ Bảng đối chuẩn 7 mô hình được đồng bộ từ nguồn dữ liệu
 
 | STT | Mô hình so sánh | Cửa sổ $L$ | Cấu hình / Siêu tham số $\theta$ | Train RMSE | Val RMSE (Retrain) | Test RMSE | Test MAE | Wet Test RMSE ($y>0$) | Rain Event $F_1$ ($\ge 0.5$mm) | Độ trễ C-API $P_{95}$ (ms) | Ràng buộc $\le 5.0$ ms | Skill Score vs. Pers (%) | Skill Score vs. Clim (%) |
 | :---: | :--- | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 1 | **Persistence (Ngây thơ)** | $L=1$ | $\hat{y}_{t+1} = y_t$ (mưa giờ trước) | 1.1615 | 1.0699 | 1.5674 | 0.4543 | 3.0420 | 0.5570 | **0.050 ms** | Khả thi | 0.00% | -9.72% |
-| 2 | **Climatology (Tháng-Giờ)** | $L=1$ | $\mathbb{E}[y \mid \text{month}, \text{hour}]$ | 0.9319 | 0.9626 | 1.4285 | 0.6228 | 2.6167 | 0.1088 | **0.080 ms** | Khả thi | +8.86% | 0.00% |
-| 3 | **Linear Regression** | $L=6$ | Hồi quy tuyến tính chuẩn (OLS) | 0.9128 | 0.8468 | 1.2203 | 0.4712 | 2.3411 | 0.5112 | 1.031 ms | Khả thi | +22.14% | +14.57% |
-| 4 | **Ridge Regression** | $L=6$ | Tuyến tính điều chuẩn L2 ($\alpha=1.0$) | 0.9128 | 0.8467 | 1.2203 | 0.4713 | 2.3411 | 0.5112 | 1.273 ms | Khả thi | +22.14% | +14.57% |
-| 5 | **LightGBM (Mặc định)** | $L=6$ | 100 trees, `max_depth` tự do | **0.5825** | 0.8499 | 1.2036 | 0.4021 | 2.3136 | 0.5617 | 2.275 ms | Khả thi | +23.21% | +15.74% |
-| 6 | **Random Search Best** | $L=6$ | 200 trees, depth=12, lr=0.0171 | 0.7667 | **0.8290** | 1.1891 | 0.3993 | 2.2937 | 0.5778 | 1.180 ms | Khả thi | +24.14% | +16.76% |
-| 7 | **Optuna TPE (Đề tài tối ưu)** | **$L=1$** | **150 trees, depth=12, lr=0.0215** | **0.8243** | **0.8318** | **1.1774** | **0.3998** | **2.2735** | **0.5882** | **1.041 ms** *(range [1.00, 1.15])* | **Khả thi & Biên an toàn** | **+24.88%** | **+17.58%** |
+| 1 | **Persistence (Ngây thơ)** | $L=1$ | $\hat{y}_{t+1} = y_t$ (mưa giờ trước) | 1.1615 | 1.0699 | 1.5674 | 0.4543 | 3.0420 | 0.5570 | 0.05 ms* | Khả thi | 0.00% | -26.81% |
+| 2 | **Climatology (Tháng-Giờ)** | $L=1$ | $\mathbb{E}[y_{t+1} \mid \text{month}, \text{hour}]$ | 0.9108 | 0.8615 | 1.2360 | 0.4615 | 2.3431 | 0.4580 | 0.08 ms* | Khả thi | +21.14% | 0.00% |
+| 3 | **Linear Regression** | $L=6$ | Hồi quy tuyến tính chuẩn (OLS) | 0.9128 | 0.8468 | 1.2203 | 0.4712 | 2.3411 | 0.5112 | 0.921 ms | Khả thi | +22.14% | +1.27% |
+| 4 | **Ridge Regression** | $L=6$ | Tuyến tính điều chuẩn L2 ($\alpha=1.0$) | 0.9128 | 0.8467 | 1.2203 | 0.4713 | 2.3411 | 0.5112 | 1.074 ms | Khả thi | +22.14% | +1.27% |
+| 5 | **LightGBM (Mặc định)** | $L=6$ | 100 trees, `max_depth` tự do | **0.5825** | 0.8499 | 1.2036 | 0.4021 | 2.3136 | 0.5617 | 0.959 ms | Khả thi | +23.21% | +2.62% |
+| 6 | **Random Search Best** | $L=6$ | 200 trees, depth=12, lr=0.0171 | 0.7667 | **0.8290** | 1.1891 | 0.3993 | 2.2937 | 0.5778 | 0.936 ms | Khả thi | +24.14% | +3.79% |
+| 7 | **Optuna TPE (Đề tài tối ưu)** | **$L=1$** | **150 trees, depth=12, lr=0.0215** | **0.8243** | 0.8318 | **1.1774** | 0.3998 | **2.2735** | **0.5882** | **0.683 ms** *(range [0.66, 0.75])* | **Khả thi & Biên an toàn** | **+24.88%** | **+4.74%** |
+
+\* Độ trễ của Persistence và Climatology là giá trị gán cố định trong `evaluate_final.py` (phép tra cứu/sao chép một số), không phải số đo. Các mô hình 3–7 được đo end-to-end ($T_{\text{feature}} + T_{\text{predict}}$) bằng `benchmark_end_to_end_latency` trên cửa sổ cuối của tập Validation.
+
+> **Đính chính so với phiên bản trước:** Baseline Climatology trước đây tra tháng/giờ bằng index của ma trận đặc trưng (đã `dropna` và đánh số lại) trên bảng dữ liệu gốc, khiến **100% mẫu Test** bị gán sai thời điểm (lệch tới 561 giờ). Sau khi sửa, Climatology mạnh hơn đáng kể (Test RMSE $1.4285 \to 1.2360$), nên Skill Score của mô hình Optuna so với Climatology giảm từ $+17.58\%$ xuống **$+4.74\%$**. Kết quả Persistence và các mô hình học máy không thay đổi.
 
 #### Phân tích Chuyên sâu về Quá trình Tối ưu & Hai Thang đo Độ trễ:
 1. **Làm rõ Hai Thang đo Độ trễ (Search Phase vs Deployment Phase):**
-   - **Giai đoạn Thăm dò Tìm kiếm (Search Phase - 500+500 trials):** Độ trễ được đo qua interface Scikit-learn wrapper tiêu chuẩn (`LGBMRegressor.predict`) nhằm phản ánh môi trường phát triển AutoML thông thường. Do overhead kiểm tra kiểu và định danh cột của Python wrapper, độ trễ trung vị trong nhật ký là ~4.49 ms (với nhiều trial vượt 5 ms đến 40 ms khi $L$ lớn và cây sâu). Ràng buộc $5.0\text{ ms}$ tại pha này đóng vai trò bộ lọc tích cực, loại bỏ 37.4% nghiệm Optuna và 51.4% nghiệm Random Search không đạt chuẩn thời gian thực.
-   - **Giai đoạn Triển khai Thực tế (Production Deployment / Champion Model):** Mô hình được tối ưu bằng cách gọi trực tiếp C-API `model.booster_.predict`, triệt tiêu hoàn toàn chi phí bọc wrapper của Python và đưa độ trễ đơn mẫu xuống **~1.04 ms** (trung vị đa lượt). Nhờ đó, mô hình đạt biên an toàn vận hành rất cao ($\le 4.5\text{ ms}$) trước mọi biến động điều tiết xung nhịp phần cứng.
-   - **Bản chất của Tỷ lệ Khả thi (Feasible Rate):** Cần lưu ý rằng **quá trình tìm kiếm sử dụng một thước đo ràng buộc nghiêm ngặt hơn triển khai** (do cộng thêm overhead của wrapper scikit-learn). Do đó, tỷ lệ khả thi ghi nhận trong quá trình tìm kiếm (Optuna 62.6% vs RS 48.6%) phản ánh năng lực lọc ràng buộc và điều hướng hiệu quả của thuật toán tối ưu hóa trong không gian tìm kiếm, chứ không phản ánh giới hạn đáp ứng SLA khi triển khai thực tế (vốn chạy C-API chỉ tốn ~1.04 ms, cách rất xa ngưỡng vi phạm 5.0 ms).
+   - **Giai đoạn Thăm dò Tìm kiếm (Search Phase - 500+500 trials):** Ràng buộc cho mỗi trial $x$ là $g(x) = P_{95}(T_{\text{e2e}}(x)) \le 5.0\text{ ms}$, đo phân vị thứ 95 qua 200 lần lặp (sau 20 lần warmup) nhằm phòng ngừa hiện tượng giật xung nhịp (CPU jitter). Các file `results/optimization_history_*.csv` được tạo ở commit `1da4ab6`, khi `latency.py` còn gọi Scikit-learn wrapper (`LGBMRegressor.predict`) và trích đặc trưng qua DataFrame. Do overhead đó, **trung vị của $P_{95}$ là 4.49 ms (Optuna) và 5.04 ms (Random Search)**; nhiều trial vượt 5 ms, tối đa 40 ms (Optuna) và 139 ms (Random Search). Ràng buộc $P_{95} \le 5.0\text{ ms}$ tại pha này đóng vai trò bộ lọc tích cực, loại bỏ 37.6% nghiệm Optuna và 51.4% nghiệm Random Search.
+   - **Giai đoạn Triển khai Thực tế (Production Deployment / Champion Model):** Mô hình được gọi trực tiếp qua `model.booster_.predict(feat_vector)` trên mảng NumPy, kết hợp bộ trích đặc trưng không tạo DataFrame trung gian, đưa độ trễ end-to-end đơn mẫu xuống **0.683 ms** (trung vị $P_{95}$ của 5 phiên, range [0.66, 0.75] ms), cách xa ngưỡng an toàn 4.5 ms.
+   - **Bản chất của Tỷ lệ Khả thi (Feasible Rate):** **Quá trình tìm kiếm đã dùng một thước đo ràng buộc nghiêm ngặt hơn triển khai.** Tỷ lệ khả thi ghi nhận (Optuna 62.4% vs RS 48.6%) phản ánh năng lực điều hướng của thuật toán dưới thước đo đó, chứ không phải giới hạn SLA khi triển khai. **Lưu ý tái lập:** code hiện tại đo bằng đường triển khai nhanh hơn, nên chạy lại `optimize_*.py` sẽ cho tỷ lệ khả thi cao hơn và không tái tạo đúng các con số trên.
 2. **Quy ước Tính Validation RMSE giữa Trial Thăm dò và Retrain:**
-   - *Trong nhật ký thăm dò (Trial gốc):* Optuna ghi nhận Val RMSE = `0.8297` (seed 456, L=1, 150 cây); Random Search ghi nhận `0.8290` (seed 42, L=6, 200 cây).
-   - *Khi tái huấn luyện xác nhận trên seed 42:* Optuna đạt Val RMSE = `0.8318`, Random Search đạt `0.8290`.
-   - *Đánh giá thực nghiệm:* Chênh lệch giữa hai phương pháp trên tập Validation rất nhỏ ($\le 0.0028\text{ mm/h}$, kiểm định $t = 0.4527, p = 0.6742 > 0.05$ — không có ý nghĩa thống kê về RMSE trên tập Val). Nhiễu tái huấn luyện do seed (~0.002) tương đương với khoảng cách giữa hai thuật toán.
-3. **So sánh Hệ số Kỹ năng (Skill Scores):**
-   - Trên tập Test độc lập, hệ số kỹ năng so với Persistence của hai mô hình là rất sát nhau (**Optuna 24.88% vs RS 24.14%**, chênh lệch 0.74 điểm phần trăm).
-   - Lợi thế cốt lõi của Optuna TPE không nằm ở việc khẳng định vượt trội tuyệt đối về sai số, mà ở **tính tinh gọn vượt bậc của giải pháp**: Optuna tự động phát hiện cửa sổ tối ưu **$L=1$ (chỉ 10 đặc trưng)** so với $L=6$ (45 đặc trưng) của Random Search, giúp giảm đáng kể chi phí lưu đệm dữ liệu quan trắc, đạt **tỷ lệ khả thi cao hơn rõ rệt (+14.0 pp)** và nhỉnh hơn về khả năng cảnh báo mưa dông ($F_1 = 0.5882$ vs $0.5778$).
+   - *Trong nhật ký thăm dò (Trial gốc):* Optuna ghi nhận Val RMSE = `0.8297` (seed 456, trial 84, L=1, 150 cây); Random Search ghi nhận `0.8290` (seed 2026, trial 41, L=6, 200 cây).
+   - *Khi tái huấn luyện từ cấu hình trong CSV:* Optuna đạt Val RMSE = `0.8318`, Random Search đạt `0.8290`.
+   - *Nguyên nhân chênh lệch 0.8297 → 0.8318:* **không phải nhiễu seed.** LightGBM ở cấu hình này không bật bagging/feature subsampling nên kết quả không phụ thuộc `random_state` (đã kiểm chứng: seed 42 và 456 cho cùng 0.8318). Chênh lệch đến từ việc nhật ký Optuna cũ lưu `learning_rate` **đã làm tròn 4 chữ số**; Random Search thì huấn luyện luôn bằng giá trị đã làm tròn nên tái lập chính xác. Code hiện tại lưu đủ độ chính xác.
+   - *Đánh giá thực nghiệm:* Chênh lệch giữa hai phương pháp trên tập Validation rất nhỏ (kiểm định paired $t = 0.4527, p = 0.6742 > 0.05$ trên giá trị tốt nhất của 5 seeds — không có ý nghĩa thống kê).
+3. **So sánh Hệ số Kỹ năng & Tinh gọn Kiến trúc:**
+   - Trên tập Test độc lập, hệ số kỹ năng so với Persistence của hai mô hình là rất sát nhau (**Optuna 24.88% vs RS 24.14%**, chênh lệch 0.74 điểm phần trăm). So với Climatology, mức cải thiện khiêm tốn hơn nhiều (**+4.74% vs +3.79%**): phần lớn tín hiệu dự báo được nắm bắt bởi chu kỳ mùa/ngày.
+   - Lợi thế cốt lõi của Optuna TPE không nằm ở việc khẳng định vượt trội tuyệt đối về sai số, mà ở **tính tinh gọn vượt bậc của giải pháp**: Optuna tự động phát hiện cửa sổ tối ưu **$L=1$ (10 đặc trưng)** so với $L=6$ (45 đặc trưng) của Random Search. Kiến trúc này giúp giảm **77.8% số chiều đặc trưng** ($1 - 10/45 = 77.8\%$) và giảm **83.3% số hàng bộ nhớ đệm chuỗi thời gian** ($1 - 1/6 = 83.3\%$, chỉ cần lưu đúng 1 hàng quan trắc tại thời điểm $t$ thay vì vòng đệm tròn 6 hàng), đạt **tỷ lệ khả thi cao hơn (+13.8 pp)** và nhỉnh hơn về khả năng cảnh báo mưa dông ($F_1 = 0.5882$ vs $0.5778$).
 
 ![Actual vs Predicted Test](results/figures/actual_vs_predicted_test.png)
 
@@ -152,22 +158,45 @@ Báo cáo thống kê trung bình $\pm$ độ lệch chuẩn trên 5 random seed
 
 | Tiêu chí so sánh | Baseline: Random Search | Main Method: Optuna (TPE) | Chênh lệch / Đánh giá |
 | :--- | :---: | :---: | :---: |
-| **Tổng số lượt đánh giá (Trials)** | 500 | 500 | Ngân sách 100 trials x 5 seeds |
-| **Số nghiệm khả thi SLA ($T_{\text{e2e}} \le 5.0\text{ ms}$)** | 243 / 500 (48.6%) | **313 / 500 (62.6%)** | **Tỷ lệ khả thi cao hơn +14.0 điểm phần trăm (pp)** |
+| **Chi phí tìm kiếm: số lượt đánh giá (Trials)** | 500 | 500 | Ngân sách 100 trials x 5 seeds. Log hiện có chưa ghi thời gian chạy; từ phiên bản code này mỗi trial ghi `trial_time_s` và `final_test_metrics.json` tổng hợp thời gian (`search_cost`) |
+| **Số nghiệm khả thi SLA ($T_{\text{e2e}} \le 5.0\text{ ms}$)** | 243 / 500 (48.6%) | **312 / 500 (62.4%)** | **Tỷ lệ khả thi cao hơn +13.8 điểm phần trăm (pp)** |
 | **Số nghiệm khả thi Biên an toàn ($T_{\text{e2e}} \le 4.5\text{ ms}$)** | 165 / 500 (33.0%) | **251 / 500 (50.2%)** | **Tỷ lệ an toàn cao hơn +17.2 điểm phần trăm (pp)** |
-| **Tỷ lệ khả thi ở ngân sách 40 trials (Phase 1)** | 78 / 200 (39.0%) | **119 / 200 (59.5%)** | **Tỷ lệ khả thi cao hơn +20.5 điểm phần trăm (pp)** |
-| **Validation RMSE tốt nhất trong Trial History** | **0.8290 mm/h** (seed 42) | 0.8297 mm/h (seed 456) | Tương đương (chênh lệch $\le 0.0007$) |
-| **Validation RMSE khi Retrain xác nhận (seed 42)** | **0.8290 mm/h** | 0.8318 mm/h | Tương đương (chênh lệch $\le 0.0028$) |
+| **Tỷ lệ khả thi ở ngân sách 40 trials (Phase 1)** | 78 / 200 (39.0%) | **118 / 200 (59.0%)** | **Tỷ lệ khả thi cao hơn +20.0 điểm phần trăm (pp)** |
+| **Kiểm định Fisher's Exact Test (gộp 1.000 trials)** | — | — | $p = 1.47 \times 10^{-5}$, OR = 1.76, 95% CI: $[+7.7\%, +19.9\%]$ *(giả định các trial độc lập)* |
+| **Số trial khả thi theo từng seed (đơn vị lặp lại)** | 26 / 42 / 48 / 66 / 61 | 66 / 53 / 69 / 71 / 53 | Optuna dẫn 4/5 seeds; Wilcoxon $p = 0.1875$, paired $t$ $p = 0.162$ (chưa đủ ý nghĩa với $n=5$) |
+| **Validation RMSE tốt nhất trong Trial History** | **0.8290 mm/h** (seed 2026) | 0.8297 mm/h (seed 456) | Tương đương (chênh lệch $\le 0.0007$) |
+| **Validation RMSE khi Retrain từ cấu hình CSV** | **0.8290 mm/h** | 0.8318 mm/h | Tương đương (chênh lệch $\le 0.0028$) |
 | **Validation RMSE trung bình qua 5 seeds** | **$0.8306 \pm 0.0017$** | **$0.8301 \pm 0.0007$** | **Độ ổn định cao hơn** |
 | **Độ lệch chuẩn qua các seeds (Std)** | Std = 0.0017 | **Std = 0.0007** | **Quan sát thấy giảm phương sai thực nghiệm 57.6%** |
-| **Kiểm định Paired Student's t-test (5 seeds)** | — | — | **$t = 0.4527, p = 0.6742$** (chấp nhận $H_0$) |
-| **Cửa sổ tối ưu lựa chọn ($L^*$)** | $L=6$ giờ (45 đặc trưng) | **$L=1$ giờ (10 đặc trưng)** | $L=1$ tối giản đường ống trích xuất đặc trưng |
-| **Độ trễ End-to-End Champion (C-API)** | 1.180 ms | **1.041 ms** *(range [1.00, 1.15])* | **Thỏa mãn SLA 5.0 ms & Biên an toàn 4.5 ms** |
+| **Kiểm định Paired Student's t-test (5 seeds)** | — | — | **$t = 0.4527, p = 0.6742 > 0.05$** (Không bác bỏ $H_0$) |
+| **Cửa sổ tối ưu lựa chọn ($L^*$)** | $L=6$ giờ (45 đặc trưng) | **$L=1$ giờ (10 đặc trưng)** | **Giảm 77.8% số chiều đặc trưng, giảm 83.3% số hàng đệm** |
+| **Độ trễ End-to-End Champion (C-API)** | 0.936 ms | **0.683 ms** *(range [0.66, 0.75])* | **Thỏa mãn SLA 5.0 ms & Biên an toàn 4.5 ms** |
 | **Chỉ số F1 phát hiện mưa dông trên Test** | 0.5778 | **0.5882** | Optuna cao hơn +1.04 điểm phần trăm |
 
-*Ghi chú khoa học về Kiểm định & Cơ chế Ràng buộc:* Bề mặt hàm mục tiêu Validation quanh vùng tối ưu khá phẳng với nhiều cấu hình ($L=1, 36, 48$ và `max_depth` khác nhau) đều cho sai số trong khoảng 0.8297–0.8318. Mức giảm độ lệch chuẩn từ 0.0017 xuống 0.0007 là một quan sát thực nghiệm có giá trị trên 5 seeds khảo sát, chưa khẳng định như một kết luận thống kê đa mẫu. Lợi thế ứng dụng thực tiễn của Optuna TPE là tìm ra $L=1$ (giảm chi phí trích xuất) và tăng tỷ lệ nghiệm khả thi (+14.0 pp ở ngưỡng 5.0 ms và +17.2 pp ở biên an toàn 4.5 ms).
+*Ghi chú khoa học về Kiểm định & Cơ chế Ràng buộc:* Bề mặt hàm mục tiêu Validation quanh vùng tối ưu khá phẳng với nhiều cấu hình ($L=1, 36, 48$ và `max_depth` khác nhau) đều cho sai số trong khoảng 0.8297–0.8318 (kiểm định Paired $t$-test trên 5 seeds không bác bỏ $H_0$ với $p = 0.6742$). Về tỷ lệ khả thi, hai cách kiểm định cho hai mức độ tin cậy khác nhau: (i) Fisher's exact test gộp 1.000 trials cho $p = 1.47 \times 10^{-5}$ (Pearson $\chi^2 = 18.72$, OR = 1.76, 95% CI $[+7.7\%, +19.9\%]$), nhưng phép thử này **giả định các trial độc lập**, trong khi TPE đề xuất trial sau dựa trên các trial trước nên các trial cùng seed tương quan với nhau; (ii) kiểm định theo seed (đúng đơn vị lặp lại độc lập) cho thấy Optuna dẫn ở 4/5 seeds nhưng **chưa đạt ý nghĩa thống kê** (Wilcoxon $p = 0.1875$, paired $t$-test $p = 0.162$; với $n = 5$, Wilcoxon hai phía không thể cho $p < 0.0625$). Kết luận thận trọng: ưu thế tỷ lệ khả thi của Optuna nhất quán về hướng nhưng cần thêm seed để khẳng định. Lợi thế thực tiễn rõ ràng nhất là Optuna tìm ra kiến trúc tinh gọn $L=1$ (giảm 77.8% số chiều đặc trưng và 83.3% số hàng đệm chuỗi thời gian).
 
-### 4. Visualizations & Engineering Analysis
+### 4. Quyết định theo Kịch bản Ngân sách Độ trễ (ε-constraint Scenarios)
+
+Áp dụng lại đúng quy tắc chọn nghiệm (Val RMSE thấp nhất trong các trial khả thi) cho từng mức ngân sách $\varepsilon$, chỉ bằng cách đọc lại lịch sử 1.000 trials: **không huấn luyện lại, không chạm tập Test**. Số liệu lấy từ `results/epsilon_scenarios.csv` (sinh bởi `src/evaluation/epsilon_scenarios.py`; `evaluate_final.py` cũng gọi module này).
+
+| Ngân sách $\varepsilon$ (P95) | Khả thi RS | Khả thi TPE | Val RMSE tốt nhất RS | Val RMSE tốt nhất TPE | Cấu hình TPE được chọn ($L$, cây, depth, leaves, lr, min_child) | P95 cấu hình chọn |
+| :--- | :---: | :---: | :---: | :---: | :--- | :---: |
+| 1.0 ms | 0 / 500 | 0 / 500 | — | — | Không có trial khả thi trong log | — |
+| 2.0 ms | 4 / 500 (0.8%) | 21 / 500 (4.2%) | 0.8395 | **0.8299** | $L=1$, 100, 2, 127, 0.1097, 10 | 1.895 ms |
+| 3.0 ms | 40 / 500 (8.0%) | 88 / 500 (17.6%) | 0.8316 | **0.8299** | $L=1$, 100, 2, 127, 0.1097, 10 | 1.895 ms |
+| 4.5 ms (biên an toàn) | 165 / 500 (33.0%) | 251 / 500 (50.2%) | **0.8290** | 0.8297 | $L=1$, 150, 12, 15, 0.0215, 20 (champion) | 3.916 ms |
+| 5.0 ms (SLA) | 243 / 500 (48.6%) | 312 / 500 (62.4%) | **0.8290** | 0.8297 | $L=1$, 150, 12, 15, 0.0215, 20 (champion) | 3.916 ms |
+
+**Quyết định theo kịch bản:**
+* **$\varepsilon \ge 4.5$ ms (SLA hiện tại):** triển khai champion ($L=1$, 150 cây, `max_depth=12`).
+* **$\varepsilon = 2$ hoặc $3$ ms (phần cứng yếu hơn hoặc SLA chặt hơn):** chọn cấu hình $L=1$, 100 cây, `max_depth=2`. Val RMSE 0.8299, chỉ kém champion 0.0002 mm/h (0.02%), trong khi P95 pha tìm kiếm giảm từ 3.916 xuống 1.895 ms (−51.6%). Với `max_depth=2` mỗi cây có tối đa 4 lá, nên `num_leaves=127` không còn tác dụng.
+* **$\varepsilon = 1$ ms:** không có trial nào trong log đạt mức này, vì sàn đo pha tìm kiếm khoảng 1.67 ms (wrapper Scikit-learn). Đường triển khai hiện tại đo champion ở 0.683 ms, nên kịch bản này cần **chạy lại tìm kiếm bằng code hiện tại**, không thể kết luận là "không khả thi".
+
+**Nhận xét:** Ưu thế của TPE rõ nhất khi ngân sách chặt. Ở $\varepsilon = 2$ ms, TPE có 21 trial khả thi so với 4 của RS, và nghiệm tốt nhất là 0.8299 so với 0.8395. Khi nới lên 4.5–5 ms, RS bắt kịp về Val RMSE (0.8290 so với 0.8297). Đây là so sánh mô tả trên log gộp, chưa kiểm định thống kê.
+
+*Lưu ý:* P95 trong bảng là số đo pha tìm kiếm (wrapper Scikit-learn, commit `1da4ab6`), cao hơn đường triển khai `booster_.predict`. Bảng dùng để so sánh tương đối giữa các cấu hình, không phải độ trễ triển khai thực tế.
+
+### 5. Visualizations & Engineering Analysis
 
 * **Biên Pareto Khả thi (`results/figures/pareto_frontier.png`):** Thể hiện rõ sự đánh đổi giữa sai số dự báo và độ trễ trong không gian tìm kiếm.
 * **Đường cong Hội tụ (`results/figures/convergence_comparison.png`):** Optuna TPE với cơ chế lấy mẫu có điều kiện đạt giá trị RMSE trung bình ổn định hơn qua 5 seeds.
@@ -200,7 +229,7 @@ pip install -r requirements.txt
    ```bash
    python src/data/download.py
    ```
-2. **Chạy Baseline (Random Search - 100 trials x 5 seeds = 500 trials):**
+2. **Chạy Baseline (Random Search - 100 trials x 5 seeds = 500 trials; số liệu Phase 1 / RQ1 được đọc từ 40 trials đầu của mỗi seed):**
    ```bash
    python src/models/optimize_random.py --trials 100
    ```
@@ -216,9 +245,11 @@ pip install -r requirements.txt
    ```bash
    python src/demo_predict.py
    ```
-6. **Đánh giá Đa mô hình & Xuất toàn bộ biểu đồ:**
+6. **Đánh giá Đa mô hình & Xuất toàn bộ biểu đồ (kèm bảng kịch bản ε `results/epsilon_scenarios.csv`):**
    ```bash
    python src/evaluation/evaluate_final.py
+   # Chỉ tính lại bảng kịch bản ε từ log (vài giây, không huấn luyện lại):
+   python src/evaluation/epsilon_scenarios.py
    ```
 7. **Kiểm thử tự động Pipeline (Unit Tests):**
    ```bash
@@ -229,6 +260,7 @@ pip install -r requirements.txt
    python src/server.py
    # Mở trình duyệt tại: http://127.0.0.1:8000
    ```
+   Trang đi theo 5 bước trình bày (khoảng 5–7 phút): **Bài toán → Kết quả tìm kiếm (RS vs TPE, đường hội tụ) → Kịch bản ε (chọn ngân sách độ trễ, xem nghiệm được chọn) → Kiểm chứng triển khai (dự báo và đo độ trễ thật) → Đối chuẩn 7 mô hình**. Mọi số liệu đọc từ `results/`.
 
 ---
 
@@ -248,13 +280,17 @@ pip install -r requirements.txt
 2. **Nhiễu đo lường Độ trễ trên Phần cứng Dùng chung (CPU Jitter):**
    - Độ trễ đơn mẫu ở mức mili-giây chịu ảnh hưởng bởi hiện tượng điều tiết xung nhịp (thermal throttling) và chuyển ngữ cảnh CPU (context switching). Do đó, dự án sử dụng phân vị 95 ($P_{95}$) qua hàng trăm lượt đo để đảm bảo tính ổn định.
 3. **Tính thưa thớt của Lượng mưa (Zero-Inflation) & Bài toán Cảnh báo Ngập:**
-   - Dữ liệu lượng mưa theo giờ tại Tân Sơn Nhất có tới $>74\%$ số giờ không mưa ($0\text{ mm}$). Việc chỉ nhìn vào RMSE toàn cục có thể bị chi phối bởi các giờ khô hạn. Vì vậy, báo cáo đã bổ sung `Wet_Test_RMSE` ($2.2735\text{ mm/h}$) và $F_1\text{-score}$ phát hiện mưa dông ($0.5882$) nhằm phục vụ trực tiếp cho mục tiêu cảnh báo ngập lụt.
+   - Dữ liệu lượng mưa theo giờ tại Tân Sơn Nhất có **80.26%** số giờ không mưa ($0\text{ mm}$) trên toàn kỳ 2023–2025 (`notebooks/01_weather_eda.ipynb`); ngay cả tập Test mùa mưa vẫn có 74.2% giờ khô. Việc chỉ nhìn vào RMSE toàn cục có thể bị chi phối bởi các giờ khô hạn. Vì vậy, báo cáo đã bổ sung `Wet_Test_RMSE` ($2.2735\text{ mm/h}$) và $F_1\text{-score}$ phát hiện mưa dông ($0.5882$) nhằm phục vụ trực tiếp cho mục tiêu cảnh báo ngập lụt.
 4. **Phạm vi Trạm Đơn lẻ:**
    - Dữ liệu thu thập từ trạm Tân Sơn Nhất (`48900`) chưa phản ánh tính phân hóa không gian (spatial heterogeneity) lượng mưa trên toàn địa bàn TP.HCM.
 5. **Độ lệch Mẫu khi So sánh các Cửa sổ $L$ (Sample Truncation by Lag):**
    - Do mỗi giá trị cửa sổ lịch sử $L$ đòi hỏi $L$ hàng dữ liệu quá khứ liên tục để khởi tạo đặc trưng, số dòng bị `dropna` ở đầu tập dữ liệu sẽ khác nhau giữa các giá trị $L$ (ví dụ: cấu hình $L=72$ mất 71 dòng dữ liệu đầu tiên nhiều hơn cấu hình $L=1$). Dù độ lệch này rất nhỏ trên tổng số 17.286 mẫu train (~0.4%), trong các nghiên cứu tiếp theo có thể chuẩn hóa bằng cách cắt bỏ cố định $L_{\max} = 72$ dòng đầu tiên cho tất cả các cấu hình để đảm bảo tập mẫu đánh giá hoàn toàn đồng nhất tuyệt đối.
 6. **Chiến lược Kiểm định Chéo Theo Chuỗi Thời Gian (Rolling-Origin Cross-Validation):**
    - Để mô phỏng sát nhất kịch bản vận hành thực tế và thách thức chuyển dịch mùa tự nhiên (với H2 là mùa mưa đỉnh điểm), nghiên cứu hiện tại áp dụng một phân chia theo trình tự thời gian cố định: Huấn luyện (2023–2024), Đánh giá kiểm định (H1/2025) và Kiểm thử độc lập (H2/2025). Hướng phát triển tiếp theo là áp dụng phương pháp Time-Series Rolling-Origin Cross-Validation (hoặc Expanding Window CV) qua nhiều chu kỳ năm khác nhau nhằm đo lường tính khái quát hóa và độ ổn định dài hạn của các mô hình.
+7. **Số lượng Seed & Khả năng Tái lập Tỷ lệ Khả thi:**
+   - Với 5 seeds, kiểm định theo seed không thể đạt $p < 0.05$ bằng Wilcoxon hai phía; cần $\ge 6$ seeds (khuyến nghị 10) để khẳng định ưu thế tỷ lệ khả thi một cách chặt chẽ.
+   - Nhật ký tìm kiếm hiện có được đo bằng wrapper Scikit-learn (commit `1da4ab6`). Code hiện tại đo bằng đường triển khai nhanh hơn (`booster_.predict` + trích đặc trưng NumPy), nên chạy lại tìm kiếm sẽ cho tỷ lệ khả thi khác. Để so sánh có ý nghĩa, cần chạy lại **cả hai** phương pháp với cùng phiên bản code.
+   - Nhật ký hiện có không ghi thời gian từng trial, nên chi phí tìm kiếm mới chỉ được báo cáo bằng số lượt đánh giá. Lần chạy lại sẽ có cột `trial_time_s`.
 
 ---
 
@@ -262,6 +298,7 @@ pip install -r requirements.txt
 
 * **Mã nguồn dự án (Code License):** Phát hành theo giấy phép [MIT License](LICENSE).
 * **Dữ liệu thời tiết (Data Source & License):** Dữ liệu quan trắc trạm Tân Sơn Nhất (ID: `48900`) được cung cấp bởi [Meteostat](https://meteostat.net/) và tuân thủ giấy phép [Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/).
+* **Phiên bản dữ liệu sử dụng:** Tải ngày **29/10/2026** bằng thư viện `meteostat==1.6.5` (`Hourly`, múi giờ `Asia/Ho_Chi_Minh`, khoảng yêu cầu 2021-01-01 → 2026-10-29). File thô có **45.944 bản ghi giờ**, từ 2021-01-01 00:00 đến 2026-03-30 07:00 giờ địa phương (nguồn chưa có dữ liệu sau thời điểm này). Dự án chỉ dùng đoạn 2023–2025. Tải lại vào thời điểm khác có thể cho số bản ghi khác nếu nguồn bổ sung dữ liệu.
 * **Chính sách dữ liệu:** Để đảm bảo tính gọn nhẹ của repository và tuân thủ quy định môn học, **các file CSV dữ liệu thô và trung gian không được commit lên Git** (đã cấu hình trong `.gitignore`). Dữ liệu có thể được tái lập hoàn toàn tự động thông qua `python src/data/download.py`.
 
 ---
@@ -273,6 +310,8 @@ pip install -r requirements.txt
   author = {Meteostat Developers},
   title = {Hourly Weather Data for Tan Son Nhat Station (48900)},
   year = {2026},
-  url = {https://meteostat.net/}
+  url = {https://meteostat.net/},
+  urldate = {2026-10-29},
+  note = {Retrieved 2026-10-29 via the meteostat Python library v1.6.5; hourly records 2021-01-01 to 2026-03-30 (Asia/Ho\_Chi\_Minh)}
 }
 ```
