@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tối Ưu Hóa Dự Báo Lượng Mưa & Độ Trễ Suy Luận | Trạm Tân Sơn Nhất</title>
-  <meta name="description" content="Dashboard tương tác thời gian thực dự báo lượng mưa một giờ tới dưới ràng buộc độ trễ phần cứng CPU P95 <= 5.0ms tại trạm Tân Sơn Nhất (WMO ID: 48900).">
-  
+  <title>Tối Ưu Dự Báo Mưa</title>
+  <meta name="description" content="Demo đồ án Nhập môn Tối ưu hóa: tối ưu siêu tham số LightGBM (Optuna TPE vs Random Search) cho dự báo mưa 1 giờ tới tại Tân Sơn Nhất dưới ràng buộc độ trễ P95 ≤ 5.0 ms.">
+
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  
+
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,11 +18,10 @@
   <div class="bg-glow bg-glow-1"></div>
   <div class="bg-glow bg-glow-2"></div>
 
-  <!-- Header & Navigation -->
   <header class="app-header">
     <div class="header-container">
       <div class="brand-group">
-        <div class="brand-icon">
+        <div class="brand-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"></path>
             <line x1="8" y1="16" x2="8.01" y2="16"></line>
@@ -34,423 +33,468 @@
           </svg>
         </div>
         <div>
-          <h1 class="brand-title">Dự Báo Lượng Mưa & Kiểm Toán Độ Trễ Suy Luận</h1>
-          <p class="brand-subtitle">Trạm Khí tượng Tân Sơn Nhất (WMO ID: 48900) &bull; Học phần: Nhập môn Tối ưu hóa</p>
+          <h1 class="brand-title">Tối Ưu Hóa Dự Báo Mưa Dưới Ràng Buộc Độ Trễ</h1>
+          <p class="brand-subtitle">Optuna TPE vs Random Search &bull; LightGBM &bull; Trạm Tân Sơn Nhất (WMO 48900) &bull; Đồ án Nhập môn Tối ưu hóa</p>
         </div>
       </div>
 
       <div class="header-status">
-        <div class="status-pill status-live">
-          <span class="pulse-dot"></span>
-          <span>Hệ Thống Trực Tuyến</span>
+        <div class="status-pill status-pending" id="server-status" role="status">
+          <span class="status-dot"></span>
+          <span id="server-status-text">Đang kết nối…</span>
         </div>
-        <div class="status-pill status-constraint">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <div class="status-pill status-constraint" title="Ràng buộc của bài toán tối ưu: phân vị 95 của độ trễ end-to-end">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
-          <span>Ràng Buộc: P₉₅ &le; 5.0 ms</span>
+          <span>Ràng buộc: P₉₅ &le; 5.0 ms</span>
         </div>
       </div>
     </div>
   </header>
 
-  <!-- Main Content Layout -->
+  <!-- Presentation order (5–7 minute demo): optimization first, the live app last -->
+  <nav class="step-nav" aria-label="Các bước trình bày">
+    <ol class="step-nav-list">
+      <li><a class="step-link" href="#s-problem"><span class="step-num">1</span>Bài toán</a></li>
+      <li><a class="step-link" href="#s-search"><span class="step-num">2</span>Kết quả tìm kiếm</a></li>
+      <li><a class="step-link" href="#s-scenarios"><span class="step-num">3</span>Kịch bản ε</a></li>
+      <li><a class="step-link" href="#s-deploy"><span class="step-num">4</span>Kiểm chứng triển khai</a></li>
+      <li><a class="step-link" href="#s-benchmark"><span class="step-num">5</span>Đối chuẩn</a></li>
+    </ol>
+  </nav>
+
   <main class="main-container">
-    
-    <!-- Scenario Presets Bar -->
-    <section class="presets-section">
-      <span class="presets-label">Kịch Bản Khí Tượng Mẫu:</span>
-      <div class="presets-grid">
-        <button type="button" class="preset-btn active" id="preset-normal" onclick="applyPreset('normal')">
-          <span class="preset-icon">☀️</span>
-          <span class="preset-name">Trưa Nắng Gắt (Mùa Khô)</span>
-        </button>
-        <button type="button" class="preset-btn" id="preset-storm" onclick="applyPreset('storm')">
-          <span class="preset-icon">⛈️</span>
-          <span class="preset-name">Chiều Dông Nhiệt Đới (Mưa To)</span>
-        </button>
-        <button type="button" class="preset-btn" id="preset-monsoon" onclick="applyPreset('monsoon')">
-          <span class="preset-icon">🌀</span>
-          <span class="preset-name">Bão Gió Mùa Tây Nam</span>
-        </button>
-        <button type="button" class="preset-btn" id="preset-cool" onclick="applyPreset('cool')">
-          <span class="preset-icon">🌫️</span>
-          <span class="preset-name">Đêm Dịu Mát (Mát Mẻ)</span>
-        </button>
+
+    <!-- Connection / API error notice -->
+    <div class="notice notice-error" id="error-notice" role="alert" hidden></div>
+
+    <!-- ============ 1. Problem formulation ============ -->
+    <section class="story-section" id="s-problem" aria-labelledby="h-problem">
+      <div class="section-head">
+        <span class="step-num step-num-lg" aria-hidden="true">1</span>
+        <div>
+          <h2 class="section-title" id="h-problem">Bài toán tối ưu</h2>
+          <p class="section-lead">Chọn cửa sổ lịch sử và siêu tham số LightGBM để sai số dự báo mưa giờ tới nhỏ nhất, trong khi độ trễ suy luận vẫn nằm trong ngân sách.</p>
+        </div>
+      </div>
+
+      <p class="formula-bar">
+        <span>x<sup>*</sup> = arg min<sub>x ∈ Ω</sub> RMSE<sub>val</sub>(x)</span>
+        <span class="formula-st">với ràng buộc</span>
+        <span>P<sub>95</sub>(T<sub>e2e</sub>(x)) &le; &epsilon; = 5.0 ms</span>
+      </p>
+
+      <div class="formulation-grid">
+        <article class="card form-card">
+          <span class="form-q">Thay đổi gì?</span>
+          <h3 class="form-title">Biến quyết định x = (L, &theta;)</h3>
+          <ul class="kv-list">
+            <li class="kv-stack"><code>L</code> cửa sổ lịch sử (giờ) <span>1, 2, 3, 6, 12, 24, 36, 48, 72</span></li>
+            <li><code>n_estimators</code> <span>20–500</span></li>
+            <li><code>max_depth</code> <span>2–12</span></li>
+            <li><code>num_leaves</code> <span>7–127</span></li>
+            <li><code>learning_rate</code> <span>0.01–0.25 (log)</span></li>
+            <li><code>min_child_samples</code> <span>10–100</span></li>
+          </ul>
+        </article>
+
+        <article class="card form-card">
+          <span class="form-q">Tối ưu gì?</span>
+          <h3 class="form-title">Hàm mục tiêu f(x)</h3>
+          <p class="form-big">min RMSE<sub>val</sub></p>
+          <p class="form-text">Sai số dự báo lượng mưa giờ t+1 (mm/h) trên tập Validation H1/2025. Tập Test H2/2025 không tham gia tìm kiếm.</p>
+        </article>
+
+        <article class="card form-card">
+          <span class="form-q">Bị giới hạn bởi gì?</span>
+          <h3 class="form-title">Ràng buộc độ trễ</h3>
+          <p class="form-big">P<sub>95</sub>(T<sub>e2e</sub>) &le; 5.0 ms</p>
+          <p class="form-text">T<sub>e2e</sub> = trích đặc trưng + suy luận cho một mẫu. Đây là dạng <strong>ε-constraint</strong> của bài toán hai mục tiêu sai số–độ trễ; biên an toàn nội bộ 4.5 ms.</p>
+        </article>
+
+        <article class="card form-card">
+          <span class="form-q">So với gì?</span>
+          <h3 class="form-title">Baseline &amp; giao thức</h3>
+          <ul class="kv-list">
+            <li>Baseline <span>Random Search</span></li>
+            <li>Phương pháp chính <span>Optuna TPE + <code>constraints_func</code></span></li>
+            <li>Ngân sách mỗi phương pháp <span id="budget-text">—</span></li>
+            <li>Pha 1 (RQ1) <span>40 trials đầu mỗi seed</span></li>
+            <li>Tập Test <span>dùng 1 lần, sau khi chọn nghiệm</span></li>
+          </ul>
+        </article>
       </div>
     </section>
 
-    <!-- Two-Column Interactive Grid -->
-    <div class="dashboard-grid">
-      
-      <!-- Left Column: Weather Control Panel -->
-      <section class="card panel-controls">
-        <div class="card-header">
-          <div class="header-title-group">
-            <span class="header-badge">Đầu Vào Thời Gian Thực (t)</span>
-            <h2 class="card-title">Tham Số Quan Trắc Khí Tượng</h2>
+    <!-- ============ 2. Search results ============ -->
+    <section class="story-section" id="s-search" aria-labelledby="h-search">
+      <div class="section-head">
+        <span class="step-num step-num-lg" aria-hidden="true">2</span>
+        <div>
+          <h2 class="section-title" id="h-search">Kết quả tìm kiếm: Random Search vs Optuna TPE</h2>
+          <p class="section-lead">Cùng không gian tìm kiếm, cùng ngân sách, cùng 5 seeds. Mọi số liệu đọc trực tiếp từ <code>results/</code>.</p>
+        </div>
+      </div>
+
+      <div class="kpi-grid" id="kpi-grid">
+        <div class="kpi-tile kpi-empty">Đang tải kết quả tìm kiếm…</div>
+      </div>
+
+      <div class="card chart-card">
+        <div class="chart-head">
+          <div>
+            <h3 class="chart-title" id="conv-title">Hội tụ: Val RMSE tốt nhất trong các trial khả thi</h3>
+            <p class="chart-sub">Trung bình ± độ lệch chuẩn qua 5 seeds, theo số trial đã chạy. Đường dọc đánh dấu hết Pha 1 (40 trials).</p>
           </div>
-          <button type="button" class="btn-reset" id="btn-reset-sliders" onclick="resetDefaults()">Đặt Lại Mặc Định</button>
+          <ul class="legend" aria-label="Chú giải">
+            <li><i class="key-line key-tpe" aria-hidden="true"></i>Optuna TPE</li>
+            <li><i class="key-line key-rs" aria-hidden="true"></i>Random Search</li>
+          </ul>
+        </div>
+        <div class="chart-box" id="conv-chart" tabindex="0" aria-label="Biểu đồ hội tụ. Dùng phím mũi tên trái phải để xem từng trial."></div>
+        <details class="table-view">
+          <summary>Xem dạng bảng</summary>
+          <div class="table-responsive table-scroll">
+            <table class="data-table" id="conv-table"></table>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ============ 3. Epsilon-constraint scenarios ============ -->
+    <section class="story-section" id="s-scenarios" aria-labelledby="h-scenarios">
+      <div class="section-head">
+        <span class="step-num step-num-lg" aria-hidden="true">3</span>
+        <div>
+          <h2 class="section-title" id="h-scenarios">Quyết định theo kịch bản ngân sách độ trễ ε</h2>
+          <p class="section-lead">Áp dụng lại quy tắc chọn nghiệm (Val RMSE thấp nhất trong các trial thỏa ε) cho từng mức ngân sách. Chỉ đọc lại log tìm kiếm: không huấn luyện lại, không dùng tập Test.</p>
+        </div>
+      </div>
+
+      <div class="filter-row">
+        <span class="filter-label" id="eps-label">Ngân sách ε</span>
+        <div class="segmented" role="radiogroup" aria-labelledby="eps-label" id="eps-control"></div>
+      </div>
+
+      <div class="scenario-grid">
+        <div class="card chart-card">
+          <div class="chart-head">
+            <div>
+              <h3 class="chart-title" id="pareto-title">Không gian nghiệm: Val RMSE theo độ trễ P₉₅</h3>
+              <p class="chart-sub">Mỗi điểm là một trial (1.000 trials). Trục ngang thang log. Điểm mờ vi phạm ε; vòng tròn là cấu hình được chọn.</p>
+            </div>
+            <ul class="legend" aria-label="Chú giải">
+              <li><i class="key-dot key-tpe" aria-hidden="true"></i>Optuna TPE</li>
+              <li><i class="key-dot key-rs" aria-hidden="true"></i>Random Search</li>
+              <li><i class="key-line key-pareto" aria-hidden="true"></i>Biên Pareto</li>
+              <li><i class="key-ring" aria-hidden="true"></i>Được chọn</li>
+            </ul>
+          </div>
+          <div class="chart-box chart-box-tall" id="pareto-chart"></div>
         </div>
 
-        <form id="weather-form" class="controls-form" onsubmit="return false;">
-          <!-- Temperature Slider -->
-          <div class="control-group">
-            <div class="control-header">
-              <label for="slider-temp">Nhiệt độ không khí (temp)</label>
-              <span class="val-badge" id="val-temp">34.0 °C</span>
-            </div>
-            <input type="range" id="slider-temp" min="18.0" max="42.0" step="0.5" value="34.0" oninput="updateParam('temp', this.value, '°C')">
-            <div class="range-labels">
-              <span>18°C (Se lạnh)</span>
-              <span>30°C</span>
-              <span>42°C (Nắng gay gắt)</span>
-            </div>
-          </div>
+        <aside class="card decision-card" id="decision-card" aria-live="polite">
+          <p class="kpi-empty">Đang tải kịch bản…</p>
+        </aside>
+      </div>
 
-          <!-- Relative Humidity Slider -->
-          <div class="control-group">
-            <div class="control-header">
-              <label for="slider-rhum">Độ ẩm tương đối (rhum)</label>
-              <span class="val-badge" id="val-rhum">53 %</span>
-            </div>
-            <input type="range" id="slider-rhum" min="20" max="100" step="1" value="53" oninput="updateParam('rhum', this.value, '%')">
-            <div class="range-labels">
-              <span>20% (Khô hanh)</span>
-              <span>60%</span>
-              <span>100% (Bão hòa hơi ẩm)</span>
-            </div>
-          </div>
+      <details class="card table-view table-view-card">
+        <summary>Bảng kịch bản ε đầy đủ (<code>results/epsilon_scenarios.csv</code>)</summary>
+        <div class="table-responsive">
+          <table class="data-table" id="scenario-table"></table>
+        </div>
+      </details>
 
-          <!-- Dew Point Slider -->
-          <div class="control-group">
-            <div class="control-header">
-              <label for="slider-dwpt">Điểm sương (dwpt)</label>
-              <span class="val-badge" id="val-dwpt">23.1 °C</span>
-            </div>
-            <input type="range" id="slider-dwpt" min="10.0" max="32.0" step="0.5" value="23.1" oninput="updateParam('dwpt', this.value, '°C')">
-            <div class="range-labels">
-              <span>10°C</span>
-              <span>22°C</span>
-              <span>32°C (Khí áp ẩm rất cao)</span>
-            </div>
-          </div>
+      <p class="caveat">P₉₅ ở bước này là số đo trong pha tìm kiếm (qua wrapper Scikit-learn), cao hơn đường triển khai <code>booster_.predict</code> ở bước 4. Dùng để so sánh tương đối giữa các cấu hình, không phải độ trễ triển khai thực tế.</p>
+    </section>
 
-          <!-- Atmospheric Pressure Slider -->
-          <div class="control-group">
-            <div class="control-header">
-              <label for="slider-pres">Áp suất khí quyển (pres)</label>
-              <span class="val-badge" id="val-pres">1005.0 hPa</span>
-            </div>
-            <input type="range" id="slider-pres" min="985.0" max="1025.0" step="0.5" value="1005.0" oninput="updateParam('pres', this.value, 'hPa')">
-            <div class="range-labels">
-              <span>985 hPa (Áp thấp nhiệt đới)</span>
-              <span>1010 hPa</span>
-              <span>1025 hPa (Khí áp cao)</span>
-            </div>
-          </div>
+    <!-- ============ 4. Deployment check of the selected model ============ -->
+    <section class="story-section" id="s-deploy" aria-labelledby="h-deploy">
+      <div class="section-head">
+        <span class="step-num step-num-lg" aria-hidden="true">4</span>
+        <div>
+          <h2 class="section-title" id="h-deploy">Kiểm chứng nghiệm khi triển khai</h2>
+          <p class="section-lead">Cấu hình được chọn ở ε = 5 ms chạy thật trên máy này: nạp một giờ quan trắc trong tập Test, xem dự báo và đo độ trễ end-to-end so với ràng buộc.</p>
+        </div>
+      </div>
 
-          <!-- Wind Speed Slider -->
-          <div class="control-group">
-            <div class="control-header">
-              <label for="slider-wspd">Tốc độ gió bề mặt (wspd)</label>
-              <span class="val-badge" id="val-wspd">7.0 km/h</span>
-            </div>
-            <input type="range" id="slider-wspd" min="0.0" max="60.0" step="1.0" value="7.0" oninput="updateParam('wspd', this.value, 'km/h')">
-            <div class="range-labels">
-              <span>0 km/h (Gió lặng)</span>
-              <span>20 km/h</span>
-              <span>60 km/h (Gió giật mạnh)</span>
-            </div>
-          </div>
+      <!-- Scenario Presets (real observations from the Test set) -->
+      <div class="presets-section">
+        <div class="presets-head">
+          <h3 class="presets-label">Giờ quan trắc thật trong tập Test (H2/2025)</h3>
+          <p class="presets-hint">Chọn một giờ để nạp số liệu đo được, rồi so dự báo với lượng mưa thực tế giờ kế tiếp.</p>
+        </div>
+        <div class="presets-grid" id="presets-grid">
+          <!-- Rendered by app.js from PRESETS -->
+        </div>
+      </div>
 
-          <!-- Previous Rain Slider -->
-          <div class="control-group">
-            <div class="control-header">
-              <label for="slider-prcp">Lượng mưa giờ hiện tại (prcp lag 0)</label>
-              <span class="val-badge" id="val-prcp">0.0 mm/h</span>
-            </div>
-            <input type="range" id="slider-prcp" min="0.0" max="40.0" step="0.5" value="0.0" oninput="updateParam('prcp', this.value, 'mm/h')">
-            <div class="range-labels">
-              <span>0.0 mm (Tạnh ráo)</span>
-              <span>15.0 mm</span>
-              <span>40.0 mm (Mưa tầm tã)</span>
-            </div>
-          </div>
+      <div class="dashboard-grid">
 
-          <!-- Time Horizon Selectors -->
-          <div class="control-row">
-            <div class="control-group control-half">
-              <label for="select-hour">Thời điểm trong ngày</label>
-              <select id="select-hour" onchange="updateTime()">
-                <option value="6">06:00 (Sáng sớm)</option>
-                <option value="9">09:00 (Buổi sáng)</option>
-                <option value="12">12:00 (Buổi trưa)</option>
-                <option value="14" selected>14:00 (Đầu giờ chiều)</option>
-                <option value="16">16:00 (Chiều dông)</option>
-                <option value="18">18:00 (Hoàng hôn)</option>
-                <option value="21">21:00 (Buổi tối)</option>
-                <option value="0">00:00 (Nửa đêm)</option>
-              </select>
-            </div>
-            <div class="control-group control-half">
-              <label for="select-month">Thời điểm trong năm</label>
-              <select id="select-month" onchange="updateTime()">
-                <option value="2">Tháng 2 (Mùa khô)</option>
-                <option value="5">Tháng 5 (Giao mùa)</option>
-                <option value="7">Tháng 7 (Mùa mưa cao điểm)</option>
-                <option value="10" selected>Tháng 10 (Triều cường & Mưa lớn)</option>
-                <option value="12">Tháng 12 (Cuối năm)</option>
-              </select>
-            </div>
-          </div>
-        </form>
-      </section>
-
-      <!-- Right Column: Prediction & Hardware Instruments -->
-      <div class="panel-instruments">
-        
-        <!-- Live Prediction Card -->
-        <section class="card card-prediction" id="prediction-card">
-          <div class="card-header">
-            <span class="header-badge badge-cyan">Mô Hình Vô Địch (Optuna TPE)</span>
-            <span class="model-meta-tag">L=1h &bull; 150 Cây &bull; Depth=12</span>
-          </div>
-
-          <div class="prediction-body">
-            <div class="rain-readout-group">
-              <span class="readout-label">DỰ BÁO LƯỢNG MƯA GIỜ KẾ TIẾP (ŷₜ₊₁)</span>
-              <div class="readout-value-box">
-                <span class="readout-number" id="pred-rain-val">0.67</span>
-                <span class="readout-unit">mm/h</span>
-              </div>
-            </div>
-
-            <!-- Dynamic Flood Alert Banner -->
-            <div class="alert-banner alert-yellow" id="alert-banner">
-              <div class="alert-icon" id="alert-icon">🟡</div>
-              <div class="alert-content">
-                <h3 class="alert-title" id="alert-title">CẢNH BÁO VÀNG: Có Mưa Dông</h3>
-                <p class="alert-desc" id="alert-desc">Lượng mưa từ 0.5 - 2.9 mm/h. Khả năng phát triển mây đối lưu nhiệt đới cục bộ. Đề xuất sẵn sàng vận hành máy bơm.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Hardware Latency Gauge Card -->
-        <section class="card card-latency">
+        <!-- Left Column: Weather Control Panel -->
+        <div class="card panel-controls" role="group" aria-labelledby="controls-heading">
           <div class="card-header">
             <div class="header-title-group">
-              <span class="header-badge badge-green">Kiểm Toán Phần Cứng (CPU Đơn Luồng)</span>
-              <h2 class="card-title">Độ Trễ Suy Luận Toàn Trình (T_e2e)</h2>
+              <span class="header-badge">Đầu vào tại thời điểm t</span>
+              <h3 class="card-title" id="controls-heading">Tham số quan trắc khí tượng</h3>
             </div>
-            <div class="feasibility-badge feasible" id="feasibility-badge">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span>THỎA MÃN (&le; 5.0 ms)</span>
-            </div>
+            <span class="mode-tag" id="mode-tag">Tùy chỉnh</span>
           </div>
 
-          <div class="gauge-grid">
-            <!-- Circular Gauge Visual -->
-            <div class="gauge-container">
-              <svg class="gauge-svg" viewBox="0 0 160 160">
-                <circle class="gauge-track" cx="80" cy="80" r="65"></circle>
-                <circle class="gauge-fill" id="gauge-circle" cx="80" cy="80" r="65" stroke-dasharray="408.4" stroke-dashoffset="245"></circle>
-              </svg>
-              <div class="gauge-content">
-                <span class="gauge-ms-num" id="gauge-ms">2.09</span>
-                <span class="gauge-ms-unit">mili-giây</span>
-                <span class="gauge-budget-tag" id="gauge-budget-tag">41.8% Ngân Sách</span>
+          <form id="weather-form" class="controls-form" onsubmit="return false;">
+            <div class="control-group">
+              <div class="control-header">
+                <label for="slider-temp">Nhiệt độ không khí <code>temp</code></label>
+                <output class="val-badge" id="val-temp" for="slider-temp">—</output>
+              </div>
+              <input type="range" id="slider-temp" data-param="temp" min="19" max="39" step="0.5">
+              <div class="range-labels"><span>19 °C</span><span>39 °C</span></div>
+            </div>
+
+            <div class="control-group">
+              <div class="control-header">
+                <label for="slider-dwpt">Điểm sương <code>dwpt</code></label>
+                <output class="val-badge" id="val-dwpt" for="slider-dwpt">—</output>
+              </div>
+              <input type="range" id="slider-dwpt" data-param="dwpt" min="12" max="30" step="0.1" aria-describedby="dwpt-hint">
+              <div class="range-labels"><span>12 °C</span><span id="dwpt-hint">không vượt quá nhiệt độ</span><span>30 °C</span></div>
+            </div>
+
+            <div class="control-group derived-group">
+              <div class="control-header">
+                <span class="derived-label" id="rhum-label">Độ ẩm tương đối <code>rhum</code> <span class="derived-chip">tự tính</span></span>
+                <output class="val-badge val-derived" id="val-rhum" aria-labelledby="rhum-label">—</output>
+              </div>
+              <div class="meter" role="meter" aria-labelledby="rhum-label" aria-valuemin="0" aria-valuemax="100" id="rhum-meter">
+                <div class="meter-fill" id="rhum-fill"></div>
+              </div>
+              <p class="derived-note">Tính từ nhiệt độ và điểm sương (công thức Magnus); khớp dữ liệu trạm với sai số P₉₅ 0.24%.</p>
+            </div>
+
+            <div class="control-group">
+              <div class="control-header">
+                <label for="slider-pres">Áp suất khí quyển <code>pres</code></label>
+                <output class="val-badge" id="val-pres" for="slider-pres">—</output>
+              </div>
+              <input type="range" id="slider-pres" data-param="pres" min="998" max="1020" step="0.5">
+              <div class="range-labels"><span>998 hPa</span><span>1020 hPa</span></div>
+            </div>
+
+            <div class="control-group">
+              <div class="control-header">
+                <label for="slider-wspd">Tốc độ gió <code>wspd</code></label>
+                <output class="val-badge" id="val-wspd" for="slider-wspd">—</output>
+              </div>
+              <input type="range" id="slider-wspd" data-param="wspd" min="0" max="50" step="1">
+              <div class="range-labels"><span>0 km/h</span><span>50 km/h</span></div>
+            </div>
+
+            <div class="control-group">
+              <div class="control-header">
+                <label for="slider-prcp">Lượng mưa giờ hiện tại <code>prcp</code></label>
+                <output class="val-badge" id="val-prcp" for="slider-prcp">—</output>
+              </div>
+              <input type="range" id="slider-prcp" data-param="prcp" min="0" max="25" step="0.1">
+              <div class="range-labels"><span>0 mm</span><span>25 mm</span></div>
+            </div>
+
+            <div class="control-row">
+              <div class="control-group">
+                <label for="select-hour">Giờ quan trắc (t)</label>
+                <select id="select-hour" data-param="hour"></select>
+              </div>
+              <div class="control-group">
+                <label for="select-month">Tháng</label>
+                <select id="select-month" data-param="month"></select>
               </div>
             </div>
 
-            <!-- Latency Breakdown bars -->
-            <div class="latency-breakdown">
-              <div class="breakdown-item">
-                <div class="breakdown-info">
-                  <span class="breakdown-name">1. Trích xuất đặc trưng (T_feature)</span>
-                  <span class="breakdown-val" id="lat-feature-val">0.587 ms</span>
-                </div>
-                <div class="progress-bar-bg">
-                  <div class="progress-bar-fill fill-blue" id="bar-feature" style="width: 11.7%;"></div>
-                </div>
-              </div>
-
-              <div class="breakdown-item">
-                <div class="breakdown-info">
-                  <span class="breakdown-name">2. Dự báo cây LightGBM (T_predict)</span>
-                  <span class="breakdown-val" id="lat-predict-val">1.508 ms</span>
-                </div>
-                <div class="progress-bar-bg">
-                  <div class="progress-bar-fill fill-cyan" id="bar-predict" style="width: 30.1%;"></div>
-                </div>
-              </div>
-
-              <div class="breakdown-item">
-                <div class="breakdown-info">
-                  <span class="breakdown-name">3. Ràng buộc tối đa cho phép</span>
-                  <span class="breakdown-val text-muted">5.000 ms</span>
-                </div>
-                <div class="progress-bar-bg">
-                  <div class="progress-bar-fill fill-limit" style="width: 100%;"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Live 200-Run Benchmark Card -->
-        <section class="card card-benchmark">
-          <div class="benchmark-header">
-            <div>
-              <h3 class="benchmark-title">Kiểm Thử Thống Kê Trực Tiếp (Live Benchmark)</h3>
-              <p class="benchmark-desc">Chạy lặp 200 lần đo với 20 warmup cycles trực tiếp trên phần cứng máy này.</p>
-            </div>
-            <button type="button" class="btn-primary" id="btn-run-benchmark" onclick="runBenchmark()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
-              <span>Chạy 200 Lần Đo</span>
-            </button>
-          </div>
-
-          <div class="benchmark-metrics-grid" id="benchmark-results">
-            <div class="b-metric-box">
-              <span class="b-metric-label">Phân vị P₅₀</span>
-              <span class="b-metric-val" id="b-p50">1.82 ms</span>
-            </div>
-            <div class="b-metric-box highlight">
-              <span class="b-metric-label">Phân vị P₉₅ (Kiểm định)</span>
-              <span class="b-metric-val text-green" id="b-p95">2.14 ms</span>
-            </div>
-            <div class="b-metric-box">
-              <span class="b-metric-label">Phân vị P₉₉</span>
-              <span class="b-metric-val" id="b-p99">2.68 ms</span>
-            </div>
-            <div class="b-metric-box">
-              <span class="b-metric-label">Trung bình &plusmn; Độ lệch</span>
-              <span class="b-metric-val" id="b-mean">1.85 &plusmn; 0.18 ms</span>
-            </div>
-          </div>
-        </section>
-
-      </div>
-    </div>
-
-    <!-- Multi-Model Benchmark Table Section -->
-    <section class="card section-benchmark-table">
-      <div class="card-header">
-        <div class="header-title-group">
-          <span class="header-badge badge-purple">Đối Chuẩn Khoa Học</span>
-          <h2 class="card-title">Bảng Đối Chuẩn Đa Mô Hình (Multi-Model Evaluation)</h2>
+            <p class="range-footnote">Phạm vi thanh trượt bám theo phạm vi quan trắc 2023–2025. Mô hình cây không ngoại suy, nên giá trị ngoài phạm vi này không làm dự báo thay đổi thêm.</p>
+          </form>
         </div>
-        <span class="text-sm text-muted">Đánh giá trên tập kiểm tra độc lập 2025 H2 (Mùa mưa cực đoan)</span>
+
+        <!-- Right Column -->
+        <div class="panel-instruments">
+
+          <!-- Live Prediction Card -->
+          <div class="card card-prediction" role="group" aria-labelledby="prediction-heading">
+            <div class="card-header">
+              <span class="header-badge badge-cyan" id="prediction-heading">Mô hình Optuna TPE</span>
+              <span class="model-meta-tag" id="model-meta">—</span>
+            </div>
+
+            <div class="prediction-body" aria-live="polite">
+              <div class="readout-row">
+                <div class="rain-readout-group">
+                  <span class="readout-label">Dự báo mưa giờ kế tiếp <span class="readout-time" id="target-time"></span></span>
+                  <div class="readout-value-box">
+                    <span class="readout-number" id="pred-rain-val">—</span>
+                    <span class="readout-unit">mm/h</span>
+                  </div>
+                </div>
+                <div class="actual-box" id="actual-box" hidden>
+                  <span class="readout-label">Thực tế đo được</span>
+                  <div class="readout-value-box">
+                    <span class="actual-number" id="actual-val">—</span>
+                    <span class="readout-unit">mm/h</span>
+                  </div>
+                  <span class="actual-diff" id="actual-diff"></span>
+                </div>
+              </div>
+
+              <div class="alert-banner alert-idle" id="alert-banner">
+                <div class="alert-swatch" aria-hidden="true"></div>
+                <div class="alert-content">
+                  <h4 class="alert-title" id="alert-title">Chưa có dự báo</h4>
+                  <p class="alert-desc" id="alert-desc">Đang chờ kết nối tới máy chủ suy luận.</p>
+                </div>
+              </div>
+
+              <p class="model-caveat">Mô hình được tối ưu theo RMSE trên dữ liệu có ~80% giờ khô, nên có xu hướng <strong>dự báo thấp</strong> các trận dông bùng phát đột ngột (Wet-hour RMSE 2.27 mm/h trên tập Test).</p>
+            </div>
+          </div>
+
+          <!-- Hardware Latency Gauge Card -->
+          <div class="card card-latency" role="group" aria-labelledby="latency-heading">
+            <div class="card-header">
+              <div class="header-title-group">
+                <span class="header-badge badge-green">CPU đơn luồng &bull; đo phía server</span>
+                <h3 class="card-title" id="latency-heading">Độ trễ end-to-end của lần dự báo này</h3>
+              </div>
+              <div class="feasibility-badge" id="feasibility-badge" role="status">—</div>
+            </div>
+
+            <div class="gauge-grid">
+              <div class="gauge-container">
+                <svg class="gauge-svg" viewBox="0 0 160 160" aria-hidden="true">
+                  <circle class="gauge-track" cx="80" cy="80" r="65"></circle>
+                  <circle class="gauge-fill" id="gauge-circle" cx="80" cy="80" r="65" stroke-dasharray="408.4" stroke-dashoffset="408.4"></circle>
+                  <!-- 4.5 ms safety-margin tick at 90% of the arc. The arc starts at 3 o'clock in
+                       SVG coords (the whole SVG is rotated -90deg in CSS); a line drawn at 12 o'clock
+                       therefore needs +54deg to sit at 324deg = 0.9 * 360. -->
+                  <line class="gauge-tick" x1="80" y1="8" x2="80" y2="22" transform="rotate(54 80 80)"></line>
+                </svg>
+                <div class="gauge-content">
+                  <span class="gauge-ms-num" id="gauge-ms">—</span>
+                  <span class="gauge-ms-unit">ms</span>
+                  <span class="gauge-budget-tag" id="gauge-budget-tag">—</span>
+                </div>
+              </div>
+
+              <div class="latency-breakdown">
+                <div class="breakdown-item">
+                  <div class="breakdown-info">
+                    <span class="breakdown-name">Trích xuất đặc trưng</span>
+                    <span class="breakdown-val" id="lat-feature-val">—</span>
+                  </div>
+                  <div class="progress-bar-bg"><div class="progress-bar-fill fill-blue" id="bar-feature"></div></div>
+                </div>
+                <div class="breakdown-item">
+                  <div class="breakdown-info">
+                    <span class="breakdown-name">Suy luận LightGBM</span>
+                    <span class="breakdown-val" id="lat-predict-val">—</span>
+                  </div>
+                  <div class="progress-bar-bg"><div class="progress-bar-fill fill-cyan" id="bar-predict"></div></div>
+                </div>
+                <div class="breakdown-legend">
+                  <span><i class="legend-mark mark-safety"></i>Biên an toàn 4.5 ms</span>
+                  <span><i class="legend-mark mark-limit"></i>Ràng buộc 5.0 ms = cả vòng tròn</span>
+                </div>
+                <p class="latency-note">Một lần đo đơn lẻ dao động theo tải CPU; dùng benchmark bên dưới để có P₉₅. Không tính thời gian truyền mạng.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Benchmark Card -->
+          <div class="card card-benchmark" role="group" aria-labelledby="bench-heading">
+            <div class="benchmark-header">
+              <div>
+                <h4 class="benchmark-title" id="bench-heading">Benchmark P₉₅ trực tiếp</h4>
+                <p class="benchmark-desc">20 lượt khởi động + 200 lượt đo trên chính máy này, với đầu vào hiện tại.</p>
+              </div>
+              <button type="button" class="btn-primary" id="btn-run-benchmark">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>Chạy 200 lần đo</span>
+              </button>
+            </div>
+
+            <div class="benchmark-metrics-grid" aria-live="polite">
+              <div class="b-metric-box">
+                <span class="b-metric-label">P₅₀</span>
+                <span class="b-metric-val" id="b-p50">—</span>
+              </div>
+              <div class="b-metric-box highlight">
+                <span class="b-metric-label">P₉₅ (dùng để xét ràng buộc)</span>
+                <span class="b-metric-val" id="b-p95">—</span>
+              </div>
+              <div class="b-metric-box">
+                <span class="b-metric-label">P₉₉</span>
+                <span class="b-metric-val" id="b-p99">—</span>
+              </div>
+              <div class="b-metric-box">
+                <span class="b-metric-label">Trung bình &plusmn; độ lệch</span>
+                <span class="b-metric-val" id="b-mean">—</span>
+              </div>
+            </div>
+            <p class="benchmark-empty" id="benchmark-empty">Chưa chạy. Bấm nút để đo trên phần cứng hiện tại.</p>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 5. Multi-model benchmark ============ -->
+    <section class="story-section" id="s-benchmark" aria-labelledby="h-benchmark">
+      <div class="section-head">
+        <span class="step-num step-num-lg" aria-hidden="true">5</span>
+        <div>
+          <h2 class="section-title" id="h-benchmark">Đối chuẩn 7 mô hình trên tập Test</h2>
+          <p class="section-lead">Nghiệm được chọn so với các baseline thống kê và học máy. Tập Test H2/2025 chỉ được dùng ở bước này.</p>
+        </div>
       </div>
 
-      <div class="table-responsive">
-        <table class="benchmark-table">
-          <thead>
-            <tr>
-              <th>STT</th>
-              <th>Mô hình Đối chuẩn</th>
-              <th>Cửa sổ L</th>
-              <th>Cấu hình Siêu tham số</th>
-              <th>Validation RMSE</th>
-              <th>Test RMSE</th>
-              <th>Wet-Hour RMSE</th>
-              <th>Cảnh báo F₁</th>
-              <th>Độ trễ P₉₅</th>
-              <th>Ràng buộc &le; 5ms</th>
-            </tr>
-          </thead>
-          <tbody id="benchmark-table-body">
-            <tr>
-              <td>1</td>
-              <td><strong>Persistence (Ngây thơ)</strong></td>
-              <td>1h</td>
-              <td>y(t+1) = prcp(t)</td>
-              <td>1.0699</td>
-              <td>1.5674</td>
-              <td>3.0420</td>
-              <td>0.5570</td>
-              <td>0.050 ms</td>
-              <td><span class="badge-tag tag-green">THỎA MÃN</span></td>
-            </tr>
-            <tr>
-              <td>2</td>
-              <td><strong>Linear Regression</strong></td>
-              <td>6h</td>
-              <td>Default OLS</td>
-              <td>0.8468</td>
-              <td>1.2203</td>
-              <td>2.3411</td>
-              <td>0.5112</td>
-              <td>3.628 ms</td>
-              <td><span class="badge-tag tag-green">THỎA MÃN</span></td>
-            </tr>
-            <tr>
-              <td>3</td>
-              <td><strong>Ridge Regression</strong></td>
-              <td>6h</td>
-              <td>alpha = 1.0</td>
-              <td>0.8467</td>
-              <td>1.2203</td>
-              <td>2.3411</td>
-              <td>0.5112</td>
-              <td>3.647 ms</td>
-              <td><span class="badge-tag tag-green">THỎA MÃN</span></td>
-            </tr>
-            <tr class="row-violated">
-              <td>4</td>
-              <td><strong>LightGBM (Mặc định)</strong></td>
-              <td>6h</td>
-              <td>100 trees, depth=-1</td>
-              <td>0.8499</td>
-              <td>1.2036</td>
-              <td>2.3136</td>
-              <td>0.5617</td>
-              <td><strong>5.604 ms</strong></td>
-              <td><span class="badge-tag tag-red">VI PHẠM (Quá tải)</span></td>
-            </tr>
-            <tr>
-              <td>5</td>
-              <td><strong>Random Search Best</strong></td>
-              <td>6h</td>
-              <td>200 trees, depth=12, lr=0.0171</td>
-              <td>0.8290</td>
-              <td>1.1891</td>
-              <td>2.2937</td>
-              <td>0.5778</td>
-              <td>4.939 ms</td>
-              <td><span class="badge-tag tag-green">THỎA MÃN</span></td>
-            </tr>
-            <tr class="row-champion">
-              <td>6</td>
-              <td><strong>Optuna TPE (Vô Địch Đồ Án)</strong></td>
-              <td><strong>1h</strong></td>
-              <td><strong>150 trees, depth=12, lr=0.0215</strong></td>
-              <td><strong>0.8318</strong></td>
-              <td><strong>1.1774</strong></td>
-              <td><strong>2.2735</strong></td>
-              <td><strong>0.5882</strong></td>
-              <td><strong>4.547 ms</strong></td>
-              <td><span class="badge-tag tag-champion">TỐI ƯU TOÀN CỤC</span></td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="card section-benchmark-table">
+        <div class="card-header card-header-wrap">
+          <span class="header-badge badge-purple">Đối chuẩn trên tập Test H2/2025</span>
+          <span class="text-sm text-muted">Nguồn: <code>results/multi_model_benchmark.csv</code></span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th scope="col">Mô hình</th>
+                <th scope="col" class="num">L</th>
+                <th scope="col">Cấu hình</th>
+                <th scope="col" class="num">Val RMSE</th>
+                <th scope="col" class="num">Test RMSE</th>
+                <th scope="col" class="num">Wet RMSE</th>
+                <th scope="col" class="num">F₁ (≥0.5 mm)</th>
+                <th scope="col" class="num">Skill vs Pers.</th>
+                <th scope="col" class="num">Skill vs Clim.</th>
+                <th scope="col" class="num">P₉₅</th>
+                <th scope="col">Ràng buộc</th>
+              </tr>
+            </thead>
+            <tbody id="benchmark-table-body">
+              <tr><td colspan="11" class="table-empty">Đang tải bảng đối chuẩn…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-footnote">RMSE, Wet RMSE tính bằng mm/h (thấp hơn là tốt hơn); giá trị tốt nhất mỗi cột được tô đậm. * Độ trễ của Persistence và Climatology là giá trị danh nghĩa, không đo.</p>
       </div>
     </section>
 
   </main>
 
-  <!-- Footer -->
   <footer class="app-footer">
     <div class="footer-container">
       <p>&copy; 2026 Trần An Kỳ &bull; Khoa Công nghệ Thông tin &bull; Trường Đại học Văn Lang</p>
-      <p class="footer-note">Đồ án Nhập môn Tối ưu hóa: Dự báo lượng mưa thời gian thực dưới ràng buộc độ trễ phần cứng</p>
+      <p class="footer-note">Dữ liệu: Meteostat (CC BY-NC 4.0)</p>
     </div>
   </footer>
 

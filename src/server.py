@@ -1,8 +1,13 @@
 """
 Interactive Web Application Server for Rainfall Nowcasting under Latency Constraints.
 Uses Python built-in http.server to provide REST APIs and serve the frontend dashboard.
+
+The dashboard follows the course demo order: problem -> search results (GET /api/optimization,
+read from results/) -> epsilon scenarios -> deployment check of the champion (POST /api/predict,
+/api/benchmark) -> multi-model benchmark (GET /api/models).
 """
 
+import gc
 import sys
 import json
 import time
@@ -19,39 +24,86 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.features.build_features import extract_single_sample_features
+from src.features.build_features import extract_features_from_array, RAW_WINDOW_COLS
+from src.evaluation.latency import LATENCY_CONSTRAINT_MS, SAFETY_MARGIN_MS
+from src.evaluation.epsilon_scenarios import compute_epsilon_scenarios, CONFIG_COLS
 
 WEB_DIR = PROJECT_ROOT / "web"
+RESULTS_DIR = PROJECT_ROOT / "results"
 MODEL_PATH = PROJECT_ROOT / "models" / "best_optuna_lgb.joblib"
 METADATA_PATH = PROJECT_ROOT / "models" / "best_optuna_lgb.json"
-BENCHMARK_PATH = PROJECT_ROOT / "results" / "multi_model_benchmark.csv"
+BENCHMARK_PATH = RESULTS_DIR / "multi_model_benchmark.csv"
+FINAL_METRICS_PATH = RESULTS_DIR / "final_test_metrics.json"
+HISTORY_PATHS = {
+    "RandomSearch": RESULTS_DIR / "optimization_history_random.csv",
+    "OptunaTPE": RESULTS_DIR / "optimization_history_optuna.csv",
+}
+HISTORY_COLS = ["seed", "trial", *CONFIG_COLS, "val_rmse", "p95_latency_ms", "is_feasible"]
+
+MAX_BENCHMARK_RUNS = 5000
 
 # Global model state
 MODEL = None
+PREDICT_FN = None
 METADATA = None
-FEATURE_COLS = None
 BENCHMARK_DATA = []
+OPTIMIZATION_DATA = None
 
-# Pre-allocate template DataFrame for fast-path inference
-TEMPLATE_DF = None
+
+class BadRequest(ValueError):
+    """Invalid client payload (mapped to HTTP 400)."""
+
+
+def _records(df: pd.DataFrame):
+    """JSON-safe rows: to_json maps NaN / pd.NA to null and NumPy scalars to plain numbers."""
+    return json.loads(df.to_json(orient="records"))
+
+
+def build_optimization_payload():
+    """
+    Search history, epsilon scenarios and the evaluation summary, all read from results/.
+    Scenarios are recomputed with the same tested function that writes results/epsilon_scenarios.csv,
+    so the dashboard and README cannot disagree. Returns None when the search logs are missing.
+    """
+    if not all(p.exists() for p in HISTORY_PATHS.values()):
+        return None
+    histories = {method: pd.read_csv(path) for method, path in HISTORY_PATHS.items()}
+    summary = None
+    if FINAL_METRICS_PATH.exists():
+        with open(FINAL_METRICS_PATH, "r", encoding="utf-8") as f:
+            summary = json.load(f)
+    return {
+        "constraint_ms": LATENCY_CONSTRAINT_MS,
+        "safety_margin_ms": SAFETY_MARGIN_MS,
+        "summary": summary,
+        "scenarios": _records(compute_epsilon_scenarios(histories["RandomSearch"], histories["OptunaTPE"])),
+        # Column-oriented rows keep ~1,000 trials compact on the wire
+        "history": {
+            "columns": HISTORY_COLS,
+            **{method: json.loads(df[HISTORY_COLS].to_json(orient="values")) for method, df in histories.items()},
+        },
+    }
+
 
 def load_app_resources():
-    global MODEL, METADATA, FEATURE_COLS, BENCHMARK_DATA, TEMPLATE_DF
-    if MODEL_PATH.exists():
-        MODEL = joblib.load(MODEL_PATH)
-        print(f"[+] Loaded Champion Model from {MODEL_PATH}")
-    else:
-        print(f"[-] Warning: Model not found at {MODEL_PATH}")
-
+    global MODEL, PREDICT_FN, METADATA, BENCHMARK_DATA, OPTIMIZATION_DATA
     if METADATA_PATH.exists():
         with open(METADATA_PATH, "r", encoding="utf-8") as f:
             METADATA = json.load(f)
-            FEATURE_COLS = METADATA.get("feature_names", [
-                "temp_lag_0", "dwpt_lag_0", "rhum_lag_0", "pres_lag_0", "wspd_lag_0",
-                "prcp_lag_0", "sin_hour", "cos_hour", "sin_month", "cos_month"
-            ])
-            TEMPLATE_DF = pd.DataFrame(np.zeros((1, len(FEATURE_COLS)), dtype=np.float32), columns=FEATURE_COLS)
-            print(f"[+] Loaded Model Metadata (L={METADATA.get('L_hours', 1)}h, {len(FEATURE_COLS)} features)")
+        # The API accepts a single hourly observation, so it can only serve an L=1 model.
+        L = METADATA.get("L_hours", 1)
+        if L != 1:
+            raise RuntimeError(f"Dashboard API serves single-observation (L=1) models only; artifact has L={L}.")
+        print(f"[+] Loaded Model Metadata (L={L}h, {METADATA.get('n_features')} features)")
+
+    if MODEL_PATH.exists():
+        MODEL = joblib.load(MODEL_PATH)
+        # Call the native booster on NumPy directly (no sklearn validation / DataFrame overhead),
+        # the same path used by the latency benchmark.
+        PREDICT_FN = MODEL.booster_.predict if hasattr(MODEL, "booster_") else MODEL.predict
+        print(f"[+] Loaded Champion Model from {MODEL_PATH}")
+    else:
+        print(f"[-] Warning: Model not found at {MODEL_PATH}")
 
     if BENCHMARK_PATH.exists():
         try:
@@ -60,11 +112,50 @@ def load_app_resources():
         except Exception as e:
             print(f"[-] Failed to load benchmark CSV: {e}")
 
+    OPTIMIZATION_DATA = build_optimization_payload()
+    if OPTIMIZATION_DATA is None:
+        print("[-] Warning: optimization logs not found in results/ (search sections will be empty)")
+    else:
+        n = sum(len(OPTIMIZATION_DATA["history"][m]) for m in HISTORY_PATHS)
+        print(f"[+] Loaded optimization history ({n} trials) and epsilon scenarios")
+
     # Warmup model once at boot
-    if MODEL is not None and TEMPLATE_DF is not None:
+    if PREDICT_FN is not None:
+        warm = build_feature_vector({})
         for _ in range(20):
-            _ = MODEL.predict(TEMPLATE_DF)
+            _ = PREDICT_FN(warm)
         print("[+] Model warmup completed (20 iterations)")
+
+
+def _num(data: dict, key: str, default: float) -> float:
+    try:
+        value = float(data.get(key, default))
+    except (TypeError, ValueError):
+        raise BadRequest(f"'{key}' must be a number")
+    if not math.isfinite(value):
+        raise BadRequest(f"'{key}' must be finite")
+    return value
+
+
+def build_feature_vector(data: dict) -> np.ndarray:
+    """
+    Validate input (temp, dwpt, rhum, pres, wspd, prcp, hour, month) and build the model's
+    feature vector through the same extractor covered by the batch/single-sample parity test.
+    """
+    hour = int(_num(data, "hour", 14))
+    month = int(_num(data, "month", 10))
+    if not 0 <= hour <= 23:
+        raise BadRequest("'hour' must be in [0, 23]")
+    if not 1 <= month <= 12:
+        raise BadRequest("'month' must be in [1, 12]")
+
+    defaults = {"temp": 32.0, "dwpt": 24.0, "rhum": 75.0, "pres": 1008.0, "wspd": 10.0, "prcp_clean": 0.0}
+    payload_keys = {"prcp_clean": "prcp"}
+    row = [_num(data, payload_keys.get(c, c), defaults[c]) for c in RAW_WINDOW_COLS]
+    if row[RAW_WINDOW_COLS.index("prcp_clean")] < 0:
+        raise BadRequest("'prcp' must be non-negative")
+
+    return extract_features_from_array(np.array([row], dtype=np.float32), hour, month, L=1)
 
 
 def predict_single(data: dict):
@@ -72,36 +163,11 @@ def predict_single(data: dict):
     Run timed end-to-end inference on input weather observation.
     Input dictionary: temp, dwpt, rhum, pres, wspd, prcp, hour, month.
     """
-    global MODEL, METADATA, FEATURE_COLS, TEMPLATE_DF
-
     t0 = time.perf_counter_ns()
-
-    hour = int(data.get("hour", 14))
-    month = int(data.get("month", 10))
-    temp = float(data.get("temp", 32.0))
-    dwpt = float(data.get("dwpt", 24.0))
-    rhum = float(data.get("rhum", 75.0))
-    pres = float(data.get("pres", 1008.0))
-    wspd = float(data.get("wspd", 10.0))
-    prcp = float(data.get("prcp", 0.0))
-
-    # Fast NumPy Vectorized Feature Extraction (Single Sample)
-    sin_h = math.sin(2.0 * math.pi * hour / 24.0)
-    cos_h = math.cos(2.0 * math.pi * hour / 24.0)
-    sin_m = math.sin(2.0 * math.pi * month / 12.0)
-    cos_m = math.cos(2.0 * math.pi * month / 12.0)
-
-    feat_arr = np.array([[temp, dwpt, rhum, pres, wspd, prcp, sin_h, cos_h, sin_m, cos_m]], dtype=np.float32)
+    feat_arr = build_feature_vector(data)
     t_feat = time.perf_counter_ns()
 
-    # Reuse pre-allocated DataFrame for zero allocations
-    if TEMPLATE_DF is not None:
-        TEMPLATE_DF.iloc[0] = feat_arr[0]
-        input_data = TEMPLATE_DF
-    else:
-        input_data = feat_arr
-
-    pred_raw = float(MODEL.predict(input_data)[0]) if MODEL is not None else 0.0
+    pred_raw = float(PREDICT_FN(feat_arr)[0])
     t_pred = time.perf_counter_ns()
 
     pred_rain = max(0.0, round(pred_raw, 2))
@@ -127,8 +193,8 @@ def predict_single(data: dict):
         alert_title = "BÌNH THƯỜNG: Không Mưa / Mưa Không Đáng Kể"
         alert_desc = "Lượng mưa < 0.5 mm/h. Hệ thống tiêu thoát nước vận hành ở trạng thái bình thường."
 
-    is_feasible = t_total_ms <= 5.0
-
+    meta = METADATA or {}
+    hyper = meta.get("hyperparameters", {})
     return {
         "pred_rain_mm": pred_rain,
         "alert": {
@@ -140,54 +206,43 @@ def predict_single(data: dict):
             "feature_ms": round(t_feature_ms, 3),
             "predict_ms": round(t_predict_ms, 3),
             "total_ms": round(t_total_ms, 3),
-            "constraint_ms": 5.0,
-            "is_feasible": is_feasible,
-            "utilization_pct": round((t_total_ms / 5.0) * 100, 1)
+            "constraint_ms": LATENCY_CONSTRAINT_MS,
+            "is_feasible": t_total_ms <= LATENCY_CONSTRAINT_MS,
+            "utilization_pct": round((t_total_ms / LATENCY_CONSTRAINT_MS) * 100, 1)
         },
         "model_info": {
-            "model_type": METADATA.get("model_type", "LightGBMRegressor") if METADATA else "LightGBM",
-            "L_hours": 1,
-            "n_estimators": METADATA.get("hyperparameters", {}).get("n_estimators", 150) if METADATA else 150,
-            "max_depth": METADATA.get("hyperparameters", {}).get("max_depth", 12) if METADATA else 12,
-            "learning_rate": METADATA.get("hyperparameters", {}).get("learning_rate", 0.0215) if METADATA else 0.0215,
+            "model_type": meta.get("model_type", "LightGBMRegressor"),
+            "L_hours": meta.get("L_hours", 1),
+            "n_estimators": hyper.get("n_estimators"),
+            "max_depth": hyper.get("max_depth"),
+            "learning_rate": hyper.get("learning_rate"),
         }
     }
 
 
 def run_latency_benchmark(data: dict, n_runs: int = 200, warmup: int = 20):
-    """Run full statistical latency benchmark on current hardware."""
-    global MODEL, METADATA, FEATURE_COLS, TEMPLATE_DF
-
-    hour = int(data.get("hour", 14))
-    month = int(data.get("month", 10))
-    temp = float(data.get("temp", 32.0))
-    dwpt = float(data.get("dwpt", 24.0))
-    rhum = float(data.get("rhum", 75.0))
-    pres = float(data.get("pres", 1008.0))
-    wspd = float(data.get("wspd", 10.0))
-    prcp = float(data.get("prcp", 0.0))
-
-    sin_h = math.sin(2.0 * math.pi * hour / 24.0)
-    cos_h = math.cos(2.0 * math.pi * hour / 24.0)
-    sin_m = math.sin(2.0 * math.pi * month / 12.0)
-    cos_m = math.cos(2.0 * math.pi * month / 12.0)
-
-    feat_arr = np.array([[temp, dwpt, rhum, pres, wspd, prcp, sin_h, cos_h, sin_m, cos_m]], dtype=np.float32)
-    bench_df = pd.DataFrame(feat_arr, columns=FEATURE_COLS) if FEATURE_COLS else feat_arr
+    """Run statistical end-to-end latency benchmark (feature build + predict) on current hardware."""
+    if not 1 <= n_runs <= MAX_BENCHMARK_RUNS:
+        raise BadRequest(f"'n_runs' must be in [1, {MAX_BENCHMARK_RUNS}]")
+    build_feature_vector(data)  # validate once before timing
 
     # Warmup
     for _ in range(warmup):
-        _ = MODEL.predict(bench_df)
+        _ = PREDICT_FN(build_feature_vector(data))
 
-    # Measurement repetitions
-    durations = []
-    for _ in range(n_runs):
-        t0 = time.perf_counter_ns()
-        _ = MODEL.predict(bench_df)
-        t_end = time.perf_counter_ns()
-        durations.append((t_end - t0) / 1e6)
+    # Measurement repetitions (GC paused, as in src/evaluation/latency.py)
+    durations = np.empty(n_runs, dtype=np.float64)
+    gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        for i in range(n_runs):
+            t0 = time.perf_counter_ns()
+            _ = PREDICT_FN(build_feature_vector(data))
+            durations[i] = (time.perf_counter_ns() - t0) / 1e6
+    finally:
+        if gc_was_enabled:
+            gc.enable()
 
-    durations = np.array(durations)
     p50 = float(np.percentile(durations, 50))
     p95 = float(np.percentile(durations, 95))
     p99 = float(np.percentile(durations, 99))
@@ -202,7 +257,7 @@ def run_latency_benchmark(data: dict, n_runs: int = 200, warmup: int = 20):
         "p99_ms": round(p99, 3),
         "mean_ms": round(mean, 3),
         "std_ms": round(std, 3),
-        "is_feasible": p95 <= 5.0,
+        "is_feasible": p95 <= LATENCY_CONSTRAINT_MS,
         "distribution_sample": [round(float(x), 3) for x in durations[:30]]
     }
 
@@ -211,63 +266,67 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
+    def _send_json(self, status: int, body):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode("utf-8"))
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/models":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(json.dumps(BENCHMARK_DATA).encode("utf-8"))
+            self._send_json(200, BENCHMARK_DATA)
+            return
+        elif parsed.path == "/api/optimization":
+            if OPTIMIZATION_DATA is None:
+                self._send_json(503, {"error": "Missing optimization logs. Run optimize_random.py and optimize_optuna.py first."})
+            else:
+                self._send_json(200, OPTIMIZATION_DATA)
             return
         elif parsed.path == "/api/status":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            status = {
+            self._send_json(200, {
                 "status": "online",
                 "station": "Tan Son Nhat (WMO 48900)",
                 "target": "Next-hour rainfall (prcp t+1)",
-                "constraint": "P95 <= 5.0 ms",
-                "model_ready": MODEL is not None
-            }
-            self.wfile.write(json.dumps(status).encode("utf-8"))
+                "constraint": f"P95 <= {LATENCY_CONSTRAINT_MS} ms",
+                "model_ready": PREDICT_FN is not None
+            })
             return
-        
+
         super().do_GET()
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path not in ("/api/predict", "/api/benchmark"):
+            self.send_response(404)
+            self.end_headers()
+            return
+
         content_length = int(self.headers.get("Content-Length", 0))
         post_body = self.rfile.read(content_length)
-
         try:
             payload = json.loads(post_body.decode("utf-8")) if post_body else {}
-        except Exception:
-            payload = {}
-
-        if parsed.path == "/api/predict":
-            res = predict_single(payload)
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(json.dumps(res).encode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"error": "Malformed JSON body"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "JSON body must be an object"})
             return
 
-        elif parsed.path == "/api/benchmark":
-            n_runs = int(payload.get("n_runs", 200))
-            res = run_latency_benchmark(payload, n_runs=n_runs)
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(json.dumps(res).encode("utf-8"))
+        if PREDICT_FN is None:
+            self._send_json(503, {"error": "Model not loaded. Run 'python src/models/train.py' first."})
             return
 
-        self.send_response(404)
-        self.end_headers()
+        try:
+            if parsed.path == "/api/predict":
+                res = predict_single(payload)
+            else:
+                res = run_latency_benchmark(payload, n_runs=int(_num(payload, "n_runs", 200)))
+        except BadRequest as e:
+            self._send_json(400, {"error": str(e)})
+            return
+        self._send_json(200, res)
 
     def do_OPTIONS(self):
         self.send_response(200)
