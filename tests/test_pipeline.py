@@ -21,8 +21,11 @@ from src.features.build_features import (
     build_features,
     split_time_series,
     extract_single_sample_features,
+    extract_features_from_array,
+    RAW_WINDOW_COLS,
 )
 from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS
+from src.evaluation.epsilon_scenarios import compute_epsilon_scenarios
 
 
 @pytest.fixture(scope="session")
@@ -117,6 +120,35 @@ class TestPipeline:
             p_single = float(predict_fn(s_vec)[0])
             assert abs(p_batch - p_single) < 1e-5, f"Prediction mismatch: batch={p_batch}, single={p_single}"
 
+    def test_array_fast_path_parity_and_validation(self, clean_data):
+        """NumPy fast path must match the DataFrame extractor exactly and reject malformed windows."""
+        for test_L in [1, 2, 3, 24]:
+            window = clean_data.iloc[1000 - test_L : 1000]
+            t = window["time"].iloc[-1]
+            arr = window[RAW_WINDOW_COLS].to_numpy(dtype=np.float32)
+            np.testing.assert_array_equal(
+                extract_features_from_array(arr, t.hour, t.month, test_L),
+                extract_single_sample_features(window, L=test_L),
+            )
+        with pytest.raises(ValueError):
+            extract_features_from_array(np.zeros((2, len(RAW_WINDOW_COLS)), dtype=np.float32), 0, 1, L=3)
+
+    def test_server_feature_vector_matches_pipeline(self, clean_data):
+        """Dashboard API must build the same feature vector as the training pipeline and validate input."""
+        from src.server import build_feature_vector, BadRequest
+
+        row = clean_data.iloc[5000]
+        payload = {c: float(row[c]) for c in ["temp", "dwpt", "rhum", "pres", "wspd"]}
+        payload.update(prcp=float(row["prcp_clean"]), hour=row["time"].hour, month=row["time"].month)
+        np.testing.assert_allclose(
+            build_feature_vector(payload),
+            extract_single_sample_features(clean_data.iloc[5000:5001], L=1),
+            atol=1e-5,
+        )
+        for bad in ({"hour": 24}, {"month": 0}, {"temp": "abc"}, {"prcp": -1}, {"rhum": float("nan")}):
+            with pytest.raises(BadRequest):
+                build_feature_vector(bad)
+
     def test_single_sample_vectorization_latency(self, clean_data):
         """Verify statistical single-sample extraction runs reliably within constraint budget."""
         sample_window = clean_data.iloc[-1:].copy()
@@ -163,3 +195,23 @@ class TestPipeline:
         dry_vector = extract_single_sample_features(dry_window, L=1)
         dry_pred = float(predict_fn(dry_vector)[0])
         assert dry_pred < 0.5, f"Expected dry forecast (< 0.5 mm/h) for clear dry weather, got {dry_pred:.2f} mm/h"
+
+    def test_epsilon_scenarios_select_best_feasible_per_budget(self):
+        """Each latency budget picks the lowest-RMSE trial with P95 <= eps; eps = 5 ms follows is_feasible."""
+        history = pd.DataFrame({
+            "seed": [1, 1, 1, 1], "trial": [1, 2, 3, 4],
+            "L": [1, 2, 6, 24], "n_estimators": [50, 100, 200, 500], "max_depth": [2, 4, 8, 12],
+            "num_leaves": [7, 15, 31, 127], "learning_rate": [0.1, 0.05, 0.03, 0.02], "min_child_samples": [10, 20, 50, 100],
+            "val_rmse": [0.90, 0.85, 0.80, 0.70],
+            "p95_latency_ms": [1.2, 2.5, 4.9, 5.2],
+            "is_feasible": [True, True, True, False],
+        })
+        scen = compute_epsilon_scenarios(history, history, eps_list=[1.0, 2.0, 3.0, LATENCY_CONSTRAINT_MS])
+        opt = scen[scen["method"] == "OptunaTPE"].set_index("epsilon_ms")
+
+        assert opt["feasible_count"].tolist() == [0, 1, 2, 3], "Feasible count must grow with the budget"
+        assert pd.isna(opt.loc[1.0, "val_rmse"]), "No trial meets 1 ms, so no configuration is selected"
+        assert opt.loc[2.0, "trial"] == 1 and opt.loc[3.0, "trial"] == 2
+        # The 0.70 trial violates the 5 ms constraint and must never be selected
+        assert opt.loc[LATENCY_CONSTRAINT_MS, "trial"] == 3
+        assert opt.loc[LATENCY_CONSTRAINT_MS, "val_rmse"] == pytest.approx(0.80)

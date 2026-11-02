@@ -4,8 +4,18 @@ Final Evaluation & Multi-Model Visualization Module.
 1. Visualizes chronological Train / Validation / Test data split.
 2. Identifies the best feasible configuration (L*, theta*) on Validation.
 3. Evaluates the selected model on the held-out Test set (2025-07 to 2025-12) EXACTLY ONCE.
-4. Performs comprehensive multi-model benchmark (Persistence, Linear, Ridge, Default LightGBM, Random, Optuna).
-5. Generates Pareto Frontier, Search Convergence, Split Timeline, and Actual vs Predicted figures.
+4. Performs comprehensive multi-model benchmark (Persistence, Climatology, Linear, Ridge,
+   Default LightGBM, Random Search best, Optuna best) with skill scores vs Persistence/Climatology.
+5. Computes feasible-rate statistics from the logged is_feasible flag: pooled Fisher / chi2
+   (assumes independent trials) and per-seed Wilcoxon / paired t-test (seed = replication unit).
+6. Generates Pareto Frontier, Search Convergence, Split Timeline, and Actual vs Predicted figures.
+7. Re-solves the epsilon-constraint problem for several latency budgets (decision per scenario) and
+   reports search cost (evaluation count; wall-clock when the logs carry trial_time_s).
+
+Outputs (single source of truth for README / paper numbers):
+    results/multi_model_benchmark.csv, results/final_test_metrics.json, results/epsilon_scenarios.csv,
+    results/figures/*.png
+Note: Persistence / Climatology latencies are fixed nominal values, not measured.
 """
 
 import json
@@ -27,8 +37,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression, Ridge
+from scipy import stats
 import lightgbm as lgb
-from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score, precision_score, recall_score, f1_score
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error, precision_score, recall_score, f1_score
 
 from src.features.build_features import (
     load_clean_weather_data,
@@ -36,6 +47,7 @@ from src.features.build_features import (
     split_time_series,
 )
 from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS
+from src.evaluation.epsilon_scenarios import compute_epsilon_scenarios, SCENARIOS_CSV
 
 
 RESULTS_DIR = Path("results")
@@ -323,17 +335,19 @@ def run_multi_model_benchmark(
     })
 
     # 2. Climatology Baseline (Month-Hour mean rainfall from training set)
-    train_times = clean_df.loc[y_tr_1.index, "time"]
+    # Split indices refer to df_feat_1 (re-indexed after dropna), NOT clean_df, so timestamps must be
+    # looked up there. Keyed by target_time: the climatology of y_{t+1} at its own month/hour.
+    target_times = df_feat_1["target_time"]
     clim_df = pd.DataFrame({
-        "month": train_times.dt.month,
-        "hour": train_times.dt.hour,
+        "month": target_times.loc[y_tr_1.index].dt.month.values,
+        "hour": target_times.loc[y_tr_1.index].dt.hour.values,
         "prcp": y_tr_1.values
     })
     clim_map = clim_df.groupby(["month", "hour"])["prcp"].mean().to_dict()
     global_clim_mean = float(y_tr_1.mean())
 
     def get_clim_preds(indices):
-        times = clean_df.loc[indices, "time"]
+        times = target_times.loc[indices]
         return np.array([clim_map.get((t.month, t.hour), global_clim_mean) for t in times], dtype=np.float32)
 
     tr_pred_clim = get_clim_preds(y_tr_1.index)
@@ -444,7 +458,7 @@ def run_multi_model_benchmark(
     benchmark_rows.append({
         "Model": "6. Random Search Best",
         "L": rnd_L,
-        "Cấu hình": f"{int(best_rnd_config['n_estimators'])} trees, depth={int(best_rnd_config['max_depth'])}, lr={float(best_rnd_config['learning_rate'])}",
+        "Cấu hình": f"{int(best_rnd_config['n_estimators'])} trees, depth={int(best_rnd_config['max_depth'])}, lr={float(best_rnd_config['learning_rate']):.4f}",
         "Train_RMSE": tr_m5["rmse"],
         "Val_RMSE": val_m5["rmse"],
         "Test_RMSE": te_m5["rmse"],
@@ -484,7 +498,7 @@ def run_multi_model_benchmark(
     benchmark_rows.append({
         "Model": "7. Optuna TPE (Đề tài tối ưu)",
         "L": best_L,
-        "Cấu hình": f"{int(best_opt_config['n_estimators'])} trees, depth={int(best_opt_config['max_depth'])}, lr={float(best_opt_config['learning_rate'])}",
+        "Cấu hình": f"{int(best_opt_config['n_estimators'])} trees, depth={int(best_opt_config['max_depth'])}, lr={float(best_opt_config['learning_rate']):.4f}",
         "Train_RMSE": tr_m6["rmse"],
         "Val_RMSE": val_m6["rmse"],
         "Test_RMSE": te_m6["rmse"],
@@ -547,6 +561,19 @@ def run_multi_model_benchmark(
     return bench_df, lgb_opt, {"champion_latency": champion_latency_stats, "split_stats": split_stats, "ref_pers_rmse": ref_pers_rmse, "ref_clim_rmse": ref_clim_rmse}
 
 
+def summarize_search_cost(df: pd.DataFrame) -> Dict[str, Any]:
+    """Search cost of one method: evaluation count always; wall-clock only if the log has trial_time_s."""
+    cost: Dict[str, Any] = {"evaluations": int(len(df))}
+    if "trial_time_s" in df.columns:
+        cost["total_wall_clock_min"] = round(float(df["trial_time_s"].sum()) / 60, 2)
+        cost["mean_trial_time_s"] = round(float(df["trial_time_s"].mean()), 3)
+        cost["median_trial_time_s"] = round(float(df["trial_time_s"].median()), 3)
+    else:
+        # Logs produced before per-trial timing was added (cost is known only as an evaluation count)
+        cost["total_wall_clock_min"] = None
+    return cost
+
+
 def evaluate_final_test_set():
     """Main evaluation pipeline orchestrating all figures and final metrics."""
     if not RANDOM_CSV.exists() or not OPTUNA_CSV.exists():
@@ -581,11 +608,11 @@ def evaluate_final_test_set():
     rnd_seed_best = feasible_rnd.groupby("seed")["val_rmse"].min()
     opt_seed_best = feasible_opt.groupby("seed")["val_rmse"].min()
 
-    common_seeds = sorted(list(set(rnd_seed_best.index).intersection(set(opt_seed_best.index))))
+    common_seeds = sorted(set(rnd_seed_best.index).intersection(opt_seed_best.index))
     rnd_vals = [float(rnd_seed_best[s]) for s in common_seeds]
     opt_vals = [float(opt_seed_best[s]) for s in common_seeds]
-    from scipy.stats import ttest_rel
-    t_stat, p_val = ttest_rel(rnd_vals, opt_vals)
+    t_stat, p_val = stats.ttest_rel(rnd_vals, opt_vals)
+    budget_per_seed = int(df_optuna.groupby("seed").size().max())
 
     # 6. Multi-Model Benchmark across Train, Validation, and Test
     bench_df, final_model, extra_stats = run_multi_model_benchmark(clean_df, best_opt_config, best_rnd_config)
@@ -593,9 +620,15 @@ def evaluate_final_test_set():
     # 7. Figure: Actual vs Predicted Rainfall on Test Set
     plot_actual_vs_predicted(clean_df, final_model, L=int(best_opt_config["L"]))
 
-    # Compute feasible counts dynamically from CSVs
-    opt_feas_count_50 = int((df_optuna["p95_latency_ms"] <= 5.0).sum())
-    rnd_feas_count_50 = int((df_random["p95_latency_ms"] <= 5.0).sum())
+    # 8. Table: epsilon-constraint scenarios (selection rule re-applied per latency budget, logs only)
+    compute_epsilon_scenarios(df_random, df_optuna).to_csv(SCENARIOS_CSV, index=False)
+    print(f"\n[+] Saved epsilon-constraint scenarios to {SCENARIOS_CSV}")
+
+    # Compute feasible counts dynamically from CSVs. The SLA count uses the logged is_feasible flag
+    # (computed on unrounded P95, i.e. the constraint the optimizer actually saw); re-thresholding the
+    # 3-decimal p95_latency_ms column misclassifies trials sitting exactly at 5.000 ms.
+    opt_feas_count_50 = int(df_optuna["is_feasible"].sum())
+    rnd_feas_count_50 = int(df_random["is_feasible"].sum())
     opt_feas_pct_50 = round(float(opt_feas_count_50 / len(df_optuna) * 100), 1)
     rnd_feas_pct_50 = round(float(rnd_feas_count_50 / len(df_random) * 100), 1)
 
@@ -607,10 +640,27 @@ def evaluate_final_test_set():
     # Phase 1 comparison (first 40 trials per seed)
     opt_p1 = df_optuna.groupby("seed").head(40)
     rnd_p1 = df_random.groupby("seed").head(40)
-    opt_p1_feas = int((opt_p1["p95_latency_ms"] <= 5.0).sum())
-    rnd_p1_feas = int((rnd_p1["p95_latency_ms"] <= 5.0).sum())
+    opt_p1_feas = int(opt_p1["is_feasible"].sum())
+    rnd_p1_feas = int(rnd_p1["is_feasible"].sum())
 
-    # 8. Final JSON Report
+    # Per-seed feasible counts (seed is the independent replication unit)
+    opt_seed_feas = df_optuna.groupby("seed")["is_feasible"].sum().reindex(common_seeds)
+    rnd_seed_feas = df_random.groupby("seed")["is_feasible"].sum().reindex(common_seeds)
+    wilcoxon_p = float(stats.wilcoxon(opt_seed_feas, rnd_seed_feas).pvalue)
+    seed_feas_t, seed_feas_p = stats.ttest_rel(opt_seed_feas, rnd_seed_feas)
+
+    # Statistical test for feasible rates (Fisher's exact test & 95% CI for difference)
+    table_50 = [[opt_feas_count_50, len(df_optuna) - opt_feas_count_50],
+                [rnd_feas_count_50, len(df_random) - rnd_feas_count_50]]
+    odds_ratio_50, p_fisher_50 = stats.fisher_exact(table_50)
+    chi2_50, p_chi2_50, _, _ = stats.chi2_contingency(table_50)
+
+    p1 = opt_feas_count_50 / len(df_optuna)
+    p2 = rnd_feas_count_50 / len(df_random)
+    diff_p = p1 - p2
+    se_diff = np.sqrt(p1 * (1 - p1) / len(df_optuna) + p2 * (1 - p2) / len(df_random))
+    ci_lower = round(float((diff_p - 1.96 * se_diff) * 100), 2)
+    ci_upper = round(float((diff_p + 1.96 * se_diff) * 100), 2)
     best_row = bench_df.iloc[-1]
     champ_lat = extra_stats["champion_latency"]
     final_report = {
@@ -627,8 +677,12 @@ def evaluate_final_test_set():
         },
         "optimization_comparison_across_seeds": {
             "seeds_evaluated": common_seeds,
-            "budget_per_seed": 100,
-            "total_trials_per_method": 500,
+            "budget_per_seed": budget_per_seed,
+            "total_trials_per_method": int(len(df_optuna)),
+            "search_cost": {
+                "random_search": summarize_search_cost(df_random),
+                "optuna_tpe": summarize_search_cost(df_optuna),
+            },
             "random_search_val_rmse_mean": round(float(rnd_seed_best.mean()), 4),
             "random_search_val_rmse_std": round(float(rnd_seed_best.std()), 4),
             "optuna_tpe_val_rmse_mean": round(float(opt_seed_best.mean()), 4),
@@ -652,6 +706,19 @@ def evaluate_final_test_set():
                         "random_feasible_count": rnd_feas_count_50,
                         "random_feasible_rate_pct": rnd_feas_pct_50,
                         "gain_percentage_points": round(opt_feas_pct_50 - rnd_feas_pct_50, 1),
+                        "fisher_exact_p_value": float(f"{p_fisher_50:.4e}"),
+                        "chi2_statistic": round(float(chi2_50), 3),
+                        "chi2_p_value": float(f"{p_chi2_50:.4e}"),
+                        "odds_ratio": round(float(odds_ratio_50), 3),
+                        "difference_95_ci_pct": [ci_lower, ci_upper],
+                    },
+                    "per_seed": {
+                        "optuna_feasible_counts": {int(s): int(v) for s, v in opt_seed_feas.items()},
+                        "random_feasible_counts": {int(s): int(v) for s, v in rnd_seed_feas.items()},
+                        "seeds_optuna_ahead": int((opt_seed_feas > rnd_seed_feas).sum()),
+                        "wilcoxon_p_value": round(wilcoxon_p, 4),
+                        "paired_t_statistic": round(float(seed_feas_t), 4),
+                        "paired_t_p_value": round(float(seed_feas_p), 4),
                     },
                     "safety_margin_4_5_ms": {
                         "optuna_feasible_count": opt_feas_count_45,
@@ -672,7 +739,7 @@ def evaluate_final_test_set():
             "rain_event_f1": float(best_row["Rain_Event_F1"]),
             "train_val_gap": round(float(best_row["Val_RMSE"] - best_row["Train_RMSE"]), 4),
             "train_test_gap": round(float(best_row["Test_RMSE"] - best_row["Train_RMSE"]), 4),
-            "generalization_notes": "Train-Val gap is minimal (+0.0075 mm/h). The increase on Test set is driven by seasonal climate distribution shift during the peak monsoon.",
+            "generalization_notes": f"Train-Val gap is {float(best_row['Val_RMSE'] - best_row['Train_RMSE']):+.4f} mm/h. The increase on Test set is driven by seasonal climate distribution shift during the peak monsoon.",
         },
         "skill_scores_on_test": {
             "skill_score_vs_persistence_pct": float(best_row["Skill_Score_Persistence_pct"]),

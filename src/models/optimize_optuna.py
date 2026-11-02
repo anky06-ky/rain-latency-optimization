@@ -7,6 +7,8 @@ Searches decision variables x = (L, theta) over a bounded space:
 Objective: Minimize Validation RMSE subject to P95 End-to-End Latency <= 5.0 ms.
 Budget: Default 100 trials per seed across 5 random seeds (total 500 evaluations for RQ2 scaling);
         can be set to 40 trials per seed (200 evaluations) for RQ1 fair budget comparison.
+Search cost: every logged trial records trial_time_s (wall-clock seconds for TPE sampling, training,
+        validation and the latency benchmark).
 """
 
 import argparse
@@ -26,12 +28,8 @@ import lightgbm as lgb
 import optuna
 from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 
-from src.features.build_features import (
-    load_clean_weather_data,
-    build_features,
-    split_time_series,
-)
-
+from src.features.build_features import load_clean_weather_data
+from src.models.optimize_random import get_train_val_split
 from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS
 
 
@@ -52,8 +50,14 @@ def run_optuna_study(
 ) -> List[Dict[str, Any]]:
     """Execute one Optuna study for a given random seed."""
     trial_records = []
+    # Latency is measured strictly on the Validation slice (0% contact with Test set)
+    val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
 
     def objective(trial: optuna.Trial) -> float:
+        # Search cost clock. TPE samples inside suggest_* (independent sampling), so it is included;
+        # the first trial per L also pays for the (cached) feature build.
+        t0 = time.perf_counter()
+
         # 1. Suggest decision variables
         L = trial.suggest_categorical("L", WINDOW_CANDIDATES)
         n_estimators = trial.suggest_categorical("n_estimators", [20, 50, 100, 150, 200, 300, 400, 500])
@@ -62,9 +66,8 @@ def run_optuna_study(
         learning_rate = trial.suggest_float("learning_rate", 0.01, 0.25, log=True)
         min_child_samples = trial.suggest_categorical("min_child_samples", [10, 20, 50, 100])
 
-        # 2. Build features for window L
-        df_feat, fcols = build_features(clean_df, L=L)
-        (X_tr, y_tr), (X_v, y_v), _ = split_time_series(df_feat, fcols)
+        # 2. Build features for window L (cached: only len(WINDOW_CANDIDATES) distinct matrices)
+        fcols, (X_tr, y_tr), (X_v, y_v) = get_train_val_split(clean_df, L)
 
         # 3. Fit LightGBM model
         model = lgb.LGBMRegressor(
@@ -84,8 +87,7 @@ def run_optuna_study(
         val_rmse = float(root_mean_squared_error(y_v, y_val_pred))
         val_mae = float(mean_absolute_error(y_v, y_val_pred))
 
-        # 5. Measure single-sample End-to-End Latency strictly on Validation slice (0% contact with Test set)
-        val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
+        # 5. Measure single-sample End-to-End Latency
         raw_window = val_slice.iloc[-L:]
         lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=200, warmup=20)
 
@@ -103,13 +105,15 @@ def run_optuna_study(
             "n_estimators": n_estimators,
             "max_depth": max_depth,
             "num_leaves": num_leaves,
-            "learning_rate": round(learning_rate, 4),
+            # Full precision: rounding here made retraining from the CSV produce a different model
+            "learning_rate": learning_rate,
             "min_child_samples": min_child_samples,
             "val_rmse": round(val_rmse, 4),
             "val_mae": round(val_mae, 4),
             "mean_latency_ms": lat_res["mean_latency_ms"],
             "p95_latency_ms": p95_lat,
             "is_feasible": lat_res["is_feasible"],
+            "trial_time_s": round(time.perf_counter() - t0, 3),
         }
         trial_records.append(record)
 

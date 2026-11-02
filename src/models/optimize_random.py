@@ -7,6 +7,8 @@ Searches decision variables x = (L, theta) over a bounded space:
 Objective: Minimize Validation RMSE subject to P95 End-to-End Latency <= 5.0 ms.
 Budget: Default 100 trials per seed across 5 random seeds (total 500 evaluations for RQ2 scaling);
         can be set to 40 trials per seed (200 evaluations) for RQ1 fair budget comparison.
+Search cost: every logged trial records trial_time_s (wall-clock seconds for sampling, training,
+        validation and the latency benchmark).
 """
 
 import argparse
@@ -15,7 +17,7 @@ import math
 import random
 import sys
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +44,22 @@ OUTPUT_CSV = RESULTS_DIR / "optimization_history_random.csv"
 # Pre-defined search space
 WINDOW_CANDIDATES = [1, 2, 3, 6, 12, 24, 36, 48, 72]
 DEFAULT_SEEDS = [42, 123, 456, 789, 2026]
+
+
+_SPLIT_CACHE: Dict[Tuple[int, int], Tuple[List[str], Tuple, Tuple]] = {}
+
+
+def get_train_val_split(clean_df: pd.DataFrame, L: int):
+    """
+    Return (feature_cols, (X_train, y_train), (X_val, y_val)) for window L, memoized per (data, L).
+    Feature construction is deterministic in L, so rebuilding it on every trial is wasted work.
+    """
+    key = (id(clean_df), L)
+    if key not in _SPLIT_CACHE:
+        df_feat, fcols = build_features(clean_df, L=L)
+        train, val, _ = split_time_series(df_feat, fcols)
+        _SPLIT_CACHE[key] = (fcols, train, val)
+    return _SPLIT_CACHE[key]
 
 
 def sample_random_configuration(seed: int) -> Dict[str, Any]:
@@ -71,9 +89,8 @@ def evaluate_candidate(
     """
     L = config["L"]
 
-    # 1. Feature extraction
-    df_feat, fcols = build_features(clean_df, L=L)
-    (X_tr, y_tr), (X_v, y_v), _ = split_time_series(df_feat, fcols)
+    # 1. Feature extraction (cached per L)
+    fcols, (X_tr, y_tr), (X_v, y_v) = get_train_val_split(clean_df, L)
 
     # 2. Train LightGBM model
     model = lgb.LGBMRegressor(
@@ -131,15 +148,17 @@ def run_random_search(n_trials: int = 40, seeds: List[int] = DEFAULT_SEEDS) -> p
         best_config = None
 
         for trial in range(1, n_trials + 1):
-            t0 = time.time()
+            t0 = time.perf_counter()
             trial_seed = seed * 1000 + trial
             config = sample_random_configuration(trial_seed)
             result = evaluate_candidate(clean_df, config, eval_seed=seed)
 
-            elapsed = time.time() - t0
+            elapsed = time.perf_counter() - t0
             result["trial"] = trial
             result["seed"] = seed
             result["method"] = "RandomSearch"
+            # Search cost; the first trial per L also pays for the (cached) feature build
+            result["trial_time_s"] = round(elapsed, 3)
 
             # Check feasibility and track best-so-far
             feasible_str = "FEASIBLE" if result["is_feasible"] else "VIOLATED"
