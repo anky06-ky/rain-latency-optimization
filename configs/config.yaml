@@ -4,7 +4,7 @@
 # NOTE: This file documents the experimental setup; it is not loaded by the code.
 # The effective values live as constants in src/ (build_features.py split dates,
 # latency.py LATENCY_CONSTRAINT_MS, optimize_*.py WINDOW_CANDIDATES / DEFAULT_SEEDS).
-# Editing this file does not change any experiment. config.json mirrors it.
+# Editing this file does not change any experiment.
 
 project:
   name: "Rainfall Forecasting under Inference Latency Constraint"
