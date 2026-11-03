@@ -12,7 +12,7 @@ Module đánh giá cuối cùng và trực quan hóa đa mô hình.
 7. Giải lại bài toán epsilon-constraint cho nhiều ngân sách độ trễ (quyết định theo từng kịch bản) và
    báo cáo chi phí tìm kiếm (số lượt đánh giá; thời gian chạy khi log có cột trial_time_s).
 
-Đầu ra (nguồn số liệu gốc duy nhất cho README / bài báo):
+Đầu ra (nguồn số liệu gốc duy nhất cho README / báo cáo):
     results/multi_model_benchmark.csv, results/final_test_metrics.json, results/epsilon_scenarios.csv,
     results/figures/*.png
 Lưu ý: độ trễ của Persistence / Climatology là giá trị danh nghĩa cố định, không phải giá trị đo.
@@ -189,7 +189,7 @@ def plot_pareto_frontier(df_all: pd.DataFrame):
 
 
 def plot_convergence_comparison(df_random: pd.DataFrame, df_optuna: pd.DataFrame):
-    """Vẽ đường tốt nhất tính đến hiện tại theo từng trial (có mốc 40 trial của RQ1): Random Search vs Optuna TPE."""
+    """Vẽ đường tốt nhất tính đến hiện tại theo từng trial (có mốc 40 trial của Pha 1): Random Search vs Optuna TPE."""
     plt.figure(figsize=(9, 5))
 
     def get_convergence_matrix(df: pd.DataFrame) -> np.ndarray:
@@ -225,11 +225,11 @@ def plot_convergence_comparison(df_random: pd.DataFrame, df_optuna: pd.DataFrame
     plt.plot(trials_axis, mean_o, label="Main Method: Optuna (TPE)", color="#31a354", linewidth=2.2)
     plt.fill_between(trials_axis, mean_o - std_o, mean_o + std_o, color="#31a354", alpha=0.2)
 
-    # Đánh dấu mốc cắt RQ1 tại trial 40 nếu mỗi seed có ít nhất 40 trial
+    # Đánh dấu mốc cắt Pha 1 tại trial 40 nếu mỗi seed có ít nhất 40 trial
     if len(trials_axis) >= 40:
-        plt.axvline(x=40, color="#d95f02", linestyle="--", linewidth=1.5, alpha=0.85, label="RQ1 Ngưỡng đối chuẩn (40 trials)")
-        plt.text(41, np.nanmax(mean_r) - 0.0005, "Pha 2: Mở rộng ngân sách (RQ2)", fontsize=9, color="#d95f02", fontweight="bold")
-        plt.text(12, np.nanmax(mean_r) - 0.0005, "Pha 1: Đối chuẩn (RQ1)", fontsize=9, color="#666666", fontweight="bold")
+        plt.axvline(x=40, color="#d95f02", linestyle="--", linewidth=1.5, alpha=0.85, label="Mốc đối chuẩn cùng ngân sách (40 trials)")
+        plt.text(41, np.nanmax(mean_r) - 0.0005, "Pha 2: Mở rộng ngân sách", fontsize=9, color="#d95f02", fontweight="bold")
+        plt.text(12, np.nanmax(mean_r) - 0.0005, "Pha 1: Đối chuẩn", fontsize=9, color="#666666", fontweight="bold")
 
     n_trials_per_seed = len(trials_axis)
     plt.title(f"Hội tụ tối ưu: So sánh Best-so-far Validation RMSE qua {n_trials_per_seed} Trials (5 Seeds)", fontsize=12, fontweight="bold")

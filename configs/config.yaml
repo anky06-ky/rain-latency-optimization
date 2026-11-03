@@ -61,8 +61,8 @@ search_space:
     min_child_samples: [10, 20, 50, 100]
 
 budget:
-  fair_comparison_trials_per_seed: 40  # RQ1: So sánh trực tiếp, công bằng với cùng một ngân sách thấp
-  scaling_trials_per_seed: 100         # RQ2: Khảo sát hội tụ và bão hòa
+  fair_comparison_trials_per_seed: 40  # Giai đoạn 1: So sánh trực tiếp, công bằng với cùng một ngân sách thấp
+  scaling_trials_per_seed: 100         # Giai đoạn 2: Khảo sát hội tụ và bão hòa
   seeds: [42, 123, 456, 789, 2026]
   total_evaluations: 500
 

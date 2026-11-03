@@ -6,8 +6,8 @@ Tìm biến quyết định x = (L, theta) trên một không gian tìm kiếm c
     - theta: Các siêu tham số của LightGBM
 Hàm mục tiêu: cực tiểu hóa RMSE trên tập Val với ràng buộc độ trễ end-to-end P95 <= 5.0 ms,
         đo theo giao thức pha tìm kiếm (SEARCH_PROTOCOL trong src/evaluation/latency.py), giống lúc sinh log.
-Ngân sách: mặc định 100 trial/seed với 5 seed ngẫu nhiên (tổng 500 lượt đánh giá, RQ2 - mở rộng ngân sách);
-        có thể đặt 40 trial/seed (200 lượt đánh giá) để so sánh công bằng cùng ngân sách cho RQ1.
+Ngân sách: mặc định 100 trial/seed với 5 seed ngẫu nhiên (tổng 500 lượt đánh giá, giai đoạn 2 - mở rộng ngân sách);
+        có thể đặt 40 trial/seed (200 lượt đánh giá) để so sánh công bằng cùng ngân sách ở giai đoạn 1.
 Chi phí tìm kiếm: mỗi trial trong log đều ghi trial_time_s (số giây thực tế cho lấy mẫu, huấn luyện,
         đánh giá trên tập Val và benchmark độ trễ).
 """
@@ -184,8 +184,8 @@ def run_random_search(n_trials: int = 40, seeds: List[int] = DEFAULT_SEEDS) -> p
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Constrained Random Search Baseline (RQ1 & RQ2).")
-    parser.add_argument("--trials", type=int, default=100, help="Number of trials per seed (default: 100 for 500 scaling trials; set 40 for RQ1 fair comparison)")
+    parser = argparse.ArgumentParser(description="Run Constrained Random Search Baseline.")
+    parser.add_argument("--trials", type=int, default=100, help="Number of trials per seed (default: 100 for 500 scaling trials; set 40 for the phase-1 equal-budget comparison)")
     parser.add_argument("--seeds", type=int, nargs="+", default=DEFAULT_SEEDS, help="Random seeds (default: 5 seeds)")
     args = parser.parse_args()
 
