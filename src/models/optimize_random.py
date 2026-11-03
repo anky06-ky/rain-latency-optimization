@@ -4,7 +4,8 @@ Module tối ưu baseline: Random Search có ràng buộc.
 Tìm biến quyết định x = (L, theta) trên một không gian tìm kiếm có giới hạn:
     - L: Độ dài cửa sổ lịch sử tính theo giờ
     - theta: Các siêu tham số của LightGBM
-Hàm mục tiêu: cực tiểu hóa RMSE trên tập Val với ràng buộc độ trễ end-to-end P95 <= 5.0 ms.
+Hàm mục tiêu: cực tiểu hóa RMSE trên tập Val với ràng buộc độ trễ end-to-end P95 <= 5.0 ms,
+        đo theo giao thức pha tìm kiếm (SEARCH_PROTOCOL trong src/evaluation/latency.py), giống lúc sinh log.
 Ngân sách: mặc định 100 trial/seed với 5 seed ngẫu nhiên (tổng 500 lượt đánh giá, RQ2 - mở rộng ngân sách);
         có thể đặt 40 trial/seed (200 lượt đánh giá) để so sánh công bằng cùng ngân sách cho RQ1.
 Chi phí tìm kiếm: mỗi trial trong log đều ghi trial_time_s (số giây thực tế cho lấy mẫu, huấn luyện,
@@ -35,14 +36,17 @@ from src.features.build_features import (
     split_time_series,
 )
 
-from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS
+from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS, SEARCH_PROTOCOL
 
 
 RESULTS_DIR = Path("results")
 OUTPUT_CSV = RESULTS_DIR / "optimization_history_random.csv"
 
-# Không gian tìm kiếm định nghĩa sẵn
+# Không gian tìm kiếm định nghĩa sẵn (khớp với log results/optimization_history_*.csv, xem tests/test_pipeline.py)
 WINDOW_CANDIDATES = [1, 2, 3, 6, 12, 24, 36, 48, 72]
+# Tối đa 300 cây: đây là không gian mà các lượt tìm kiếm đã ghi log thực sự chạy. Commit 5155f2e từng mở rộng
+# lên 500 cây nhưng không chạy lại tìm kiếm; 400-500 cây để dành cho thực nghiệm mở rộng.
+N_ESTIMATORS_CANDIDATES = [20, 50, 100, 150, 200, 300]
 DEFAULT_SEEDS = [42, 123, 456, 789, 2026]
 
 
@@ -71,7 +75,7 @@ def sample_random_configuration(seed: int) -> Dict[str, Any]:
 
     return {
         "L": rng.choice(WINDOW_CANDIDATES),
-        "n_estimators": rng.choice([20, 50, 100, 150, 200, 300, 400, 500]),
+        "n_estimators": rng.choice(N_ESTIMATORS_CANDIDATES),
         "max_depth": rng.choice([2, 3, 4, 6, 8, 10, 12]),
         "num_leaves": rng.choice([7, 15, 31, 63, 127]),
         "learning_rate": lr,
@@ -113,7 +117,7 @@ def evaluate_candidate(
     # 4. Đo độ trễ end-to-end chỉ trên phần dữ liệu của tập Val (hoàn toàn không chạm vào tập Test)
     val_slice = clean_df[(clean_df["time"] >= "2025-01-01") & (clean_df["time"] <= "2025-06-30 23:59:59")]
     raw_window = val_slice.iloc[-L:]
-    lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=200, warmup=20)
+    lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=200, warmup=20, protocol=SEARCH_PROTOCOL)
 
     return {
         "L": L,

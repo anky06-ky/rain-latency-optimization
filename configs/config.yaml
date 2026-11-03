@@ -23,6 +23,12 @@ constraints:
     n_runs: 200
     warmup: 20
     metric: "P95"
+    # Giao thức đo (src/evaluation/latency.py):
+    #   search: optimize_*.py, đã sinh ra results/optimization_history_*.csv (commit 1da4ab6):
+    #           chọn cột DataFrame mỗi lần gọi + model.predict của scikit-learn, GC bật
+    #   deploy: champion và bảng đối chuẩn: trích đặc trưng NumPy + booster_.predict, GC tạm dừng
+    search_protocol: "search"
+    deploy_protocol: "deploy"
 
 splits:
   clean_period:
@@ -40,17 +46,19 @@ splits:
     target_end: "2025-12-31 23:59:59"
     description: "2025 H2 peak monsoon season (4,416 hours)"
 
+# Không gian đã sinh ra log 1.000 trial (tập giá trị rời rạc, trừ learning_rate). Đề cương dự kiến tới 500 cây,
+# nhưng thực nghiệm chính thức chạy tới 300 cây; 400-500 cây để dành cho thực nghiệm mở rộng.
 search_space:
   L_candidates: [1, 2, 3, 6, 12, 24, 36, 48, 72]
   hyperparameters:
-    n_estimators: [20, 500]
-    max_depth: [2, 12]
-    num_leaves: [7, 127]
+    n_estimators: [20, 50, 100, 150, 200, 300]
+    max_depth: [2, 3, 4, 6, 8, 10, 12]
+    num_leaves: [7, 15, 31, 63, 127]
     learning_rate:
       low: 0.01
       high: 0.25
       log_scale: true
-    min_child_samples: [10, 100]
+    min_child_samples: [10, 20, 50, 100]
 
 budget:
   fair_comparison_trials_per_seed: 40  # RQ1: So sánh trực tiếp, công bằng với cùng một ngân sách thấp
