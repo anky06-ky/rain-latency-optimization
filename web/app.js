@@ -847,7 +847,7 @@ function drawConvergence() {
   drawAxisX(f, x, xTicks, String);
   drawAxisTitles(f, "Val RMSE (mm/h)", "Số trial đã chạy (mỗi seed)");
 
-  // Hết Pha 1 (so sánh cùng ngân sách cho RQ1)
+  // Hết Pha 1 (so sánh cùng ngân sách)
   if (n >= 40) {
     svgEl("line", { x1: x(40), x2: x(40), y1: f.y1, y2: f.y0, class: "ref-line" }, f.svg);
     svgEl("text", { x: x(40) + 6, y: f.y1 + 10, class: "ref-label" }, f.svg).textContent = "Hết Pha 1 (40 trials)";
