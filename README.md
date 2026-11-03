@@ -11,8 +11,8 @@
 > **Chủ đề:** Dự báo chuỗi thời gian có giám sát dưới ràng buộc độ trễ suy luận  
 >  
 > 📄 **Tài liệu bài tập lớn:**  
-> * **Báo cáo bài tập lớn (PDF):** [`docs/BAO_CAO_BAI_TAP_LON_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf`](docs/BAO_CAO_BAI_TAP_LON_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf)  
-> * **Đề cương bài tập lớn (PDF):** [`docs/PROPOSAL_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf`](docs/PROPOSAL_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf) *(Bản Markdown: [`docs/PROPOSAL.md`](docs/PROPOSAL.md))*  
+> * **Báo cáo bài tập lớn (Word):** [`docs/BAO_CAO_BAI_TAP_LON_TOI_UU_HOA_DU_BAO_LUONG_MUA.docx`](docs/BAO_CAO_BAI_TAP_LON_TOI_UU_HOA_DU_BAO_LUONG_MUA.docx)  
+> * **Đề cương bài tập lớn (PDF):** [`docs/PROPOSAL_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf`](docs/PROPOSAL_TOI_UU_HOA_DU_BAO_LUONG_MUA.pdf)  
 > * **Web Dashboard trực quan:** `python src/server.py` → Truy cập tại `http://127.0.0.1:8000`
 
 ---
