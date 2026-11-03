@@ -4,7 +4,8 @@ Phương pháp tối ưu chính: Tối ưu Bayes có ràng buộc bằng Optuna 
 Tìm biến quyết định x = (L, theta) trên một không gian tìm kiếm có giới hạn:
     - L: Độ dài cửa sổ lịch sử tính theo giờ
     - theta: Các siêu tham số của LightGBM
-Hàm mục tiêu: cực tiểu hóa RMSE trên tập Val với ràng buộc độ trễ end-to-end P95 <= 5.0 ms.
+Hàm mục tiêu: cực tiểu hóa RMSE trên tập Val với ràng buộc độ trễ end-to-end P95 <= 5.0 ms,
+        đo theo giao thức pha tìm kiếm (SEARCH_PROTOCOL trong src/evaluation/latency.py), giống lúc sinh log.
 Ngân sách: mặc định 100 trial/seed với 5 seed ngẫu nhiên (tổng 500 lượt đánh giá, RQ2 - mở rộng ngân sách);
         có thể đặt 40 trial/seed (200 lượt đánh giá) để so sánh công bằng cùng ngân sách cho RQ1.
 Chi phí tìm kiếm: mỗi trial trong log đều ghi trial_time_s (số giây thực tế cho lấy mẫu TPE, huấn luyện,
@@ -29,8 +30,8 @@ import optuna
 from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 
 from src.features.build_features import load_clean_weather_data
-from src.models.optimize_random import get_train_val_split
-from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS
+from src.models.optimize_random import get_train_val_split, N_ESTIMATORS_CANDIDATES
+from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS, SEARCH_PROTOCOL
 
 
 # Tắt log chi tiết của Optuna trong quá trình tìm kiếm
@@ -60,7 +61,7 @@ def run_optuna_study(
 
         # 1. Đề xuất các biến quyết định
         L = trial.suggest_categorical("L", WINDOW_CANDIDATES)
-        n_estimators = trial.suggest_categorical("n_estimators", [20, 50, 100, 150, 200, 300, 400, 500])
+        n_estimators = trial.suggest_categorical("n_estimators", N_ESTIMATORS_CANDIDATES)
         max_depth = trial.suggest_categorical("max_depth", [2, 3, 4, 6, 8, 10, 12])
         num_leaves = trial.suggest_categorical("num_leaves", [7, 15, 31, 63, 127])
         learning_rate = trial.suggest_float("learning_rate", 0.01, 0.25, log=True)
@@ -87,9 +88,9 @@ def run_optuna_study(
         val_rmse = float(root_mean_squared_error(y_v, y_val_pred))
         val_mae = float(mean_absolute_error(y_v, y_val_pred))
 
-        # 5. Đo độ trễ end-to-end trên một mẫu đơn
+        # 5. Đo độ trễ end-to-end trên một mẫu đơn, theo giao thức pha tìm kiếm đã sinh ra log
         raw_window = val_slice.iloc[-L:]
-        lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=200, warmup=20)
+        lat_res = benchmark_end_to_end_latency(model, raw_window, L=L, n_runs=200, warmup=20, protocol=SEARCH_PROTOCOL)
 
         # 6. Đặt ràng buộc cho Optuna: mức vi phạm <= 0 nghĩa là khả thi (P95 <= 5.0 ms)
         p95_lat = lat_res["p95_latency_ms"]

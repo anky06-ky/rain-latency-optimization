@@ -17,22 +17,22 @@
 
 ---
 
-## 1. Problem
+## 1. Bài toán
 
-Urban flooding triggered by short-duration, high-intensity rainfall is an acute operational challenge in metropolitan areas such as Ho Chi Minh City. Early flood alert systems require reliable next-hour precipitation forecasts. However, for real-time edge or server deployment, forecast accuracy cannot come at the expense of computational burden.
+Ngập lụt đô thị do mưa lớn cường độ cao trong thời gian ngắn là một thách thức vận hành cấp bách ở các đô thị lớn như TP. Hồ Chí Minh. Hệ thống cảnh báo ngập sớm cần dự báo lượng mưa giờ tới đủ tin cậy. Tuy nhiên, khi triển khai thời gian thực trên thiết bị biên hoặc máy chủ, việc nâng cao độ chính xác dự báo không được kéo theo chi phí tính toán quá lớn.
 
-**Research Questions:**  
-* **RQ1 (Fair Comparison under Equal Budget):** Under an identical evaluation budget ($N = 40$ trials/seed across 5 random seeds), does Bayesian Optimization via Optuna TPE discover feasible configurations ($P_{95} \le 5.0\text{ ms}$) with lower validation RMSE and significantly higher feasible rate than Random Search?
-* **RQ2 (Budget Scaling & Saturation):** As the evaluation budget scales up to $N = 100$ trials/seed $\times$ 5 seeds = 500 trials, does the optimal solution continue to improve, and where does convergence saturation occur?
-* **RQ3 (Accuracy-Latency Trade-off):** Across an expanded model capacity space ($n_{\text{estimators}} \in [20, 500]$) and historical windows $L$, how does the Pareto frontier characterize the trade-off between forecast precision and execution latency?
+**Câu hỏi nghiên cứu:**  
+* **RQ1 (So sánh công bằng với cùng ngân sách):** Với cùng một ngân sách đánh giá ($N = 40$ trial/seed trên 5 random seed), tối ưu Bayes bằng Optuna TPE có tìm được cấu hình khả thi ($P_{95} \le 5.0\text{ ms}$) với Val RMSE thấp hơn và tỷ lệ khả thi cao hơn rõ rệt so với Random Search hay không?
+* **RQ2 (Mở rộng ngân sách và điểm bão hòa):** Khi tăng ngân sách lên $N = 100$ trial/seed $\times$ 5 seed = 500 trial, nghiệm tối ưu có tiếp tục cải thiện không, và quá trình hội tụ bắt đầu bão hòa ở đâu?
+* **RQ3 (Đánh đổi giữa độ chính xác và độ trễ):** Trên các mức dung lượng mô hình ($n_{\text{estimators}} \in \{20, 50, 100, 150, 200, 300\}$) và các cửa sổ lịch sử $L$, biên Pareto thể hiện sự đánh đổi giữa độ chính xác dự báo và độ trễ thực thi như thế nào?
 
-* **Target Variable:** Total precipitation 1 hour ahead ($y_{t+1}$ in mm) at Tan Son Nhat Station (WMO ID: `48900`).
-* **Raw Data Source & Data Quality Gate:** 
+* **Biến mục tiêu:** Tổng lượng mưa của 1 giờ tới ($y_{t+1}$, đơn vị mm) tại trạm Tân Sơn Nhất (mã WMO: `48900`).
+* **Nguồn dữ liệu thô và cổng kiểm soát chất lượng (Data Quality Gate):**
   Dữ liệu quan trắc gốc được kiểm toán từ Meteostat giai đoạn 2021–2026 (`data/raw/weather_meteostat_2021_2026.csv`). Cổng kiểm soát chất lượng dữ liệu (**Data Quality Gate**) căn cứ trên biểu đồ phân tích tỷ lệ thiếu hụt theo năm ([`results/figures/missing_rate_by_year.png`](results/figures/missing_rate_by_year.png)) đã loại bỏ giai đoạn 2021–2022 do vi phạm nghiêm trọng ngưỡng kiểm soát 5%:
   - **Năm 2021:** Thiếu **100.0%** dữ liệu lượng mưa (trạm 48900 chưa tích hợp cảm biến đo mưa theo giờ).
   - **Năm 2022:** Thiếu **40.23%** (chỉ bắt đầu ghi nhận từ giữa năm 2022).
   
-  Ngược lại, giai đoạn 3 năm liên tục **2023–2025** (26.304 giờ) đạt độ đầy đủ vượt trội (năm 2023 thiếu 0.00%, năm 2024 thiếu 2.93%, năm 2025 thiếu 3.47%, trung bình toàn kỳ chỉ **2.13%**, đạt chuẩn $\le 5\%$) và được chọn làm tập dữ liệu nghiên cứu chính thức.
+  Ngược lại, giai đoạn 3 năm liên tục **2023–2025** (26.304 giờ) đạt độ đầy đủ vượt trội (năm 2023 thiếu 0.00%, năm 2024 thiếu 2.93%, năm 2025 thiếu 3.47%, trung bình toàn kỳ chỉ **2.13%**, đạt chuẩn $\le 5\%$) và được chọn làm tập dữ liệu nghiên cứu chính thức. Ngưỡng 5% theo năm được kiểm tra tự động mỗi lần nạp dữ liệu (`check_quality_gate` trong `src/features/build_features.py`): nếu dữ liệu tải lại có năm nào thiếu quá 5%, pipeline dừng và báo lỗi thay vì chạy tiếp.
 
 ---
 
@@ -49,21 +49,25 @@ $$\begin{aligned}
 
 ### Decision Variables ($x$)
 1. **Historical Window Length ($L$):** Số giờ quá khứ sử dụng để trích xuất đặc trưng trễ và thống kê trượt ($L \in \{1, 2, 3, 6, 12, 24, 36, 48, 72\}$ giờ).
-2. **Model Hyperparameters ($\theta$):**
-   * Tree depth (`max_depth` $\in [2, 12]$)
-   * Number of boosting iterations (`n_estimators` $\in [20, 500]$ — mở rộng lên 500 cây để khảo sát giới hạn suy luận)
-   * Number of leaves (`num_leaves` $\in [7, 127]$)
+2. **Model Hyperparameters ($\theta$):** (đúng không gian đã sinh ra log 1.000 trial; trừ `learning_rate`, mỗi siêu tham số là một tập giá trị rời rạc)
+   * Tree depth (`max_depth` $\in \{2, 3, 4, 6, 8, 10, 12\}$)
+   * Number of boosting iterations (`n_estimators` $\in \{20, 50, 100, 150, 200, 300\}$)
+   * Number of leaves (`num_leaves` $\in \{7, 15, 31, 63, 127\}$)
    * Learning rate (`learning_rate` $\in [0.01, 0.25]$, lấy mẫu theo tiên nghiệm log-uniform)
-   * Minimum child samples (`min_child_samples` $\in [10, 100]$)
+   * Minimum child samples (`min_child_samples` $\in \{10, 20, 50, 100\}$)
+
+> **Về giới hạn 300 cây:** Đề cương dự kiến khảo sát tới 500 cây, và commit `5155f2e` từng mở rộng code lên $\{\dots, 400, 500\}$ nhưng không chạy lại tìm kiếm, nên không trial nào trong log có 400 hoặc 500 cây. Code đã được đưa về đúng không gian $\le 300$ cây; `tests/test_pipeline.py` kiểm tra sampler Random Search tái tạo đúng cả 500/500 cấu hình đã ghi. Khảo sát 400–500 cây là thực nghiệm mở rộng (mục 7).
 
 > **Lưu ý kỹ thuật về cấu trúc cây LightGBM:** LightGBM phát triển cây theo cơ chế *leaf-wise* (ưu tiên mở rộng lá có độ giảm tổn thất lớn nhất). Với cấu hình tối ưu `num_leaves=15`, cây chỉ có tối đa 15 lá. Do đó, `max_depth=12` đóng vai trò là **ngưỡng chặn trên (upper ceiling)** để khống chế độ sâu tối đa của các nhánh bất đối xứng, chứ không phải mô hình tạo ra cây nhị phân cân bằng $2^{12} = 4.096$ lá.
 
 ### Constraint: End-to-End Latency ($T_{\text{e2e}} \le 5.0\text{ ms}$)
 To ensure the latency constraint reflects real-world deployment, latency is evaluated **end-to-end** on single-sample inference requests:
 $$T_{\text{e2e}} = T_{\text{feature\_transform}}(L) + T_{\text{predict}}(\theta)$$
-* **Tối ưu hóa tầng suy luận:** Sử dụng `model.booster_.predict` trực tiếp trên mảng NumPy thay vì qua wrapper Scikit-learn, loại bỏ hoàn toàn overhead kiểm tra kiểu dữ liệu và cảnh báo tên cột của Python.
+* **Hai giao thức đo (`protocol` trong `src/evaluation/latency.py`):**
+  * `search` (pha tìm kiếm, dùng trong `optimize_*.py`): giao thức đã sinh ra `results/optimization_history_*.csv` (commit `1da4ab6`): chọn tập con cột DataFrame ở mỗi lần gọi, dự báo qua wrapper Scikit-learn `model.predict`, GC của Python vẫn bật. Ràng buộc $P_{95} \le 5.0\text{ ms}$ của bài toán tối ưu được xét theo giao thức này.
+  * `deploy` (đường triển khai, dùng cho champion và bảng đối chuẩn): trích đặc trưng trực tiếp bằng NumPy và gọi `model.booster_.predict`, bỏ overhead kiểm tra kiểu dữ liệu và cảnh báo tên cột của wrapper. Nhanh hơn `search`, nên ràng buộc xét theo `search` là chặt hơn so với khi triển khai.
 * **Biên an toàn nội bộ (Safety Margin):** Ràng buộc SLA hệ thống là $5.0\text{ ms}$, nhưng quy trình tối ưu đặt mục tiêu biên an toàn nội bộ $\le 4.5\text{ ms}$ nhằm đảm bảo mô hình luôn khả thi ngay cả khi chịu ảnh hưởng bởi nhiễu điều tiết xung nhịp CPU trên máy trạm dùng chung.
-* **Đo lường đa lượt (Multi-run Stability):** Mô hình champion được đo lường qua 5 phiên độc lập (mỗi phiên 100 lần lặp sau 20 lần warmup) và báo cáo giá trị trung vị (median) cùng khoảng dao động $[\min, \max]$. Bộ thu gom rác (GC) của Python được tạm dừng trong vòng đo (giống `timeit`) để loại nhiễu GC khỏi đuôi $P_{95}$.
+* **Đo lường đa lượt (Multi-run Stability):** Mô hình champion được đo lường qua 5 phiên độc lập (mỗi phiên 100 lần lặp sau 20 lần warmup) và báo cáo giá trị trung vị (median) cùng khoảng dao động $[\min, \max]$. Với giao thức `deploy`, bộ thu gom rác (GC) của Python được tạm dừng trong vòng đo (giống `timeit`) để loại nhiễu GC khỏi đuôi $P_{95}$.
 
 ### Two-Tier Experimental Budget Protocol
 * **Phase 1: Equal-Budget Comparison (RQ1):** Random Search vs Optuna TPE at **40 trials per seed** across 5 random seeds (`42, 123, 456, 789, 2026`) — total 200 evaluations per method. Phase 1 is read from the **first 40 trials of each 100-trial run** (TPE does not know the total budget, so its first 40 proposals are identical to a standalone 40-trial run). Optuna achieves **59.0% feasible rate** (118/200) vs **39.0%** (78/200) for Random Search (**+20.0 pp**). At this budget the best feasible Val RMSE is the same for both methods ($0.8325 \pm 0.0029$).
@@ -138,9 +142,9 @@ Bảng đối chuẩn 7 mô hình được đồng bộ từ nguồn dữ liệu
 
 #### Phân tích Chuyên sâu về Quá trình Tối ưu & Hai Thang đo Độ trễ:
 1. **Làm rõ Hai Thang đo Độ trễ (Search Phase vs Deployment Phase):**
-   - **Giai đoạn Thăm dò Tìm kiếm (Search Phase - 500+500 trials):** Ràng buộc cho mỗi trial $x$ là $g(x) = P_{95}(T_{\text{e2e}}(x)) \le 5.0\text{ ms}$, đo phân vị thứ 95 qua 200 lần lặp (sau 20 lần warmup) nhằm phòng ngừa hiện tượng giật xung nhịp (CPU jitter). Các file `results/optimization_history_*.csv` được tạo ở commit `1da4ab6`, khi `latency.py` còn gọi Scikit-learn wrapper (`LGBMRegressor.predict`) và trích đặc trưng qua DataFrame. Do overhead đó, **trung vị của $P_{95}$ là 4.49 ms (Optuna) và 5.04 ms (Random Search)**; nhiều trial vượt 5 ms, tối đa 40 ms (Optuna) và 139 ms (Random Search). Ràng buộc $P_{95} \le 5.0\text{ ms}$ tại pha này đóng vai trò bộ lọc tích cực, loại bỏ 37.6% nghiệm Optuna và 51.4% nghiệm Random Search.
+   - **Giai đoạn Thăm dò Tìm kiếm (Search Phase - 500+500 trials):** Ràng buộc cho mỗi trial $x$ là $g(x) = P_{95}(T_{\text{e2e}}(x)) \le 5.0\text{ ms}$, đo phân vị thứ 95 qua 200 lần lặp (sau 20 lần warmup) nhằm phòng ngừa hiện tượng giật xung nhịp (CPU jitter). Các file `results/optimization_history_*.csv` được tạo ở commit `1da4ab6` bằng giao thức đo `search` (Scikit-learn wrapper `LGBMRegressor.predict`, trích đặc trưng qua DataFrame); `optimize_*.py` hiện tại dùng đúng giao thức này. Do overhead đó, **trung vị của $P_{95}$ là 4.49 ms (Optuna) và 5.04 ms (Random Search)**; nhiều trial vượt 5 ms, tối đa 40 ms (Optuna) và 139 ms (Random Search). Ràng buộc $P_{95} \le 5.0\text{ ms}$ tại pha này đóng vai trò bộ lọc tích cực, loại bỏ 37.6% nghiệm Optuna và 51.4% nghiệm Random Search.
    - **Giai đoạn Triển khai Thực tế (Production Deployment / Champion Model):** Mô hình được gọi trực tiếp qua `model.booster_.predict(feat_vector)` trên mảng NumPy, kết hợp bộ trích đặc trưng không tạo DataFrame trung gian, đưa độ trễ end-to-end đơn mẫu xuống **0.683 ms** (trung vị $P_{95}$ của 5 phiên, range [0.66, 0.75] ms), cách xa ngưỡng an toàn 4.5 ms.
-   - **Bản chất của Tỷ lệ Khả thi (Feasible Rate):** **Quá trình tìm kiếm đã dùng một thước đo ràng buộc nghiêm ngặt hơn triển khai.** Tỷ lệ khả thi ghi nhận (Optuna 62.4% vs RS 48.6%) phản ánh năng lực điều hướng của thuật toán dưới thước đo đó, chứ không phải giới hạn SLA khi triển khai. **Lưu ý tái lập:** code hiện tại đo bằng đường triển khai nhanh hơn, nên chạy lại `optimize_*.py` sẽ cho tỷ lệ khả thi cao hơn và không tái tạo đúng các con số trên.
+   - **Bản chất của Tỷ lệ Khả thi (Feasible Rate):** **Quá trình tìm kiếm đã dùng một thước đo ràng buộc nghiêm ngặt hơn triển khai.** Tỷ lệ khả thi ghi nhận (Optuna 62.4% vs RS 48.6%) phản ánh năng lực điều hướng của thuật toán dưới thước đo đó, chứ không phải giới hạn SLA khi triển khai. **Lưu ý tái lập:** chạy lại `optimize_*.py` tái lập chính xác cấu hình và Val RMSE của Random Search, và cho $P_{95}$ cùng cỡ với log, nhưng **không tái lập được $P_{95}$ và cờ khả thi của từng trial**: ở mức vài ms, $P_{95}$ chịu ảnh hưởng của trạng thái máy theo thời gian nhiều hơn của cấu hình (xem hạn chế 7).
 2. **Quy ước Tính Validation RMSE giữa Trial Thăm dò và Retrain:**
    - *Trong nhật ký thăm dò (Trial gốc):* Optuna ghi nhận Val RMSE = `0.8297` (seed 456, trial 84, L=1, 150 cây); Random Search ghi nhận `0.8290` (seed 2026, trial 41, L=6, 200 cây).
    - *Khi tái huấn luyện từ cấu hình trong CSV:* Optuna đạt Val RMSE = `0.8318`, Random Search đạt `0.8290`.
@@ -173,7 +177,7 @@ Báo cáo thống kê trung bình $\pm$ độ lệch chuẩn trên 5 random seed
 | **Độ trễ End-to-End Champion (C-API)** | 0.936 ms | **0.683 ms** *(range [0.66, 0.75])* | **Thỏa mãn SLA 5.0 ms & Biên an toàn 4.5 ms** |
 | **Chỉ số F1 phát hiện mưa dông trên Test** | 0.5778 | **0.5882** | Optuna cao hơn +1.04 điểm phần trăm |
 
-*Ghi chú khoa học về Kiểm định & Cơ chế Ràng buộc:* Bề mặt hàm mục tiêu Validation quanh vùng tối ưu khá phẳng với nhiều cấu hình ($L=1, 36, 48$ và `max_depth` khác nhau) đều cho sai số trong khoảng 0.8297–0.8318 (kiểm định Paired $t$-test trên 5 seeds không bác bỏ $H_0$ với $p = 0.6742$). Về tỷ lệ khả thi, hai cách kiểm định cho hai mức độ tin cậy khác nhau: (i) Fisher's exact test gộp 1.000 trials cho $p = 1.47 \times 10^{-5}$ (Pearson $\chi^2 = 18.72$, OR = 1.76, 95% CI $[+7.7\%, +19.9\%]$), nhưng phép thử này **giả định các trial độc lập**, trong khi TPE đề xuất trial sau dựa trên các trial trước nên các trial cùng seed tương quan với nhau; (ii) kiểm định theo seed (đúng đơn vị lặp lại độc lập) cho thấy Optuna dẫn ở 4/5 seeds nhưng **chưa đạt ý nghĩa thống kê** (Wilcoxon $p = 0.1875$, paired $t$-test $p = 0.162$; với $n = 5$, Wilcoxon hai phía không thể cho $p < 0.0625$). Kết luận thận trọng: ưu thế tỷ lệ khả thi của Optuna nhất quán về hướng nhưng cần thêm seed để khẳng định. Lợi thế thực tiễn rõ ràng nhất là Optuna tìm ra kiến trúc tinh gọn $L=1$ (giảm 77.8% số chiều đặc trưng và 83.3% số hàng đệm chuỗi thời gian).
+*Ghi chú khoa học về Kiểm định & Cơ chế Ràng buộc:* Bề mặt hàm mục tiêu Validation quanh vùng tối ưu khá phẳng với nhiều cấu hình ($L=1, 36, 48$ và `max_depth` khác nhau) đều cho sai số trong khoảng 0.8297–0.8318 (kiểm định Paired $t$-test trên 5 seeds không bác bỏ $H_0$ với $p = 0.6742$). Về tỷ lệ khả thi, hai cách kiểm định cho hai mức độ tin cậy khác nhau: (i) Fisher's exact test gộp 1.000 trials cho $p = 1.47 \times 10^{-5}$ ($\chi^2 = 18.72$ có hiệu chỉnh Yates, OR = 1.76, 95% CI $[+7.7\%, +19.9\%]$), nhưng phép thử này **giả định các trial độc lập**, trong khi TPE đề xuất trial sau dựa trên các trial trước nên các trial cùng seed tương quan với nhau; (ii) kiểm định theo seed (đúng đơn vị lặp lại độc lập) cho thấy Optuna dẫn ở 4/5 seeds nhưng **chưa đạt ý nghĩa thống kê** (Wilcoxon $p = 0.1875$, paired $t$-test $p = 0.162$; với $n = 5$, Wilcoxon hai phía không thể cho $p < 0.0625$). Kết luận thận trọng: ưu thế tỷ lệ khả thi của Optuna nhất quán về hướng nhưng cần thêm seed để khẳng định. Lợi thế thực tiễn rõ ràng nhất là Optuna tìm ra kiến trúc tinh gọn $L=1$ (giảm 77.8% số chiều đặc trưng và 83.3% số hàng đệm chuỗi thời gian).
 
 ### 4. Quyết định theo Kịch bản Ngân sách Độ trễ (ε-constraint Scenarios)
 
@@ -190,7 +194,7 @@ Báo cáo thống kê trung bình $\pm$ độ lệch chuẩn trên 5 random seed
 **Quyết định theo kịch bản:**
 * **$\varepsilon \ge 4.5$ ms (SLA hiện tại):** triển khai champion ($L=1$, 150 cây, `max_depth=12`).
 * **$\varepsilon = 2$ hoặc $3$ ms (phần cứng yếu hơn hoặc SLA chặt hơn):** chọn cấu hình $L=1$, 100 cây, `max_depth=2`. Val RMSE 0.8299, chỉ kém champion 0.0002 mm/h (0.02%), trong khi P95 pha tìm kiếm giảm từ 3.916 xuống 1.895 ms (−51.6%). Với `max_depth=2` mỗi cây có tối đa 4 lá, nên `num_leaves=127` không còn tác dụng.
-* **$\varepsilon = 1$ ms:** không có trial nào trong log đạt mức này, vì sàn đo pha tìm kiếm khoảng 1.67 ms (wrapper Scikit-learn). Đường triển khai hiện tại đo champion ở 0.683 ms, nên kịch bản này cần **chạy lại tìm kiếm bằng code hiện tại**, không thể kết luận là "không khả thi".
+* **$\varepsilon = 1$ ms:** không có trial nào trong log đạt mức này, vì sàn đo pha tìm kiếm khoảng 1.67 ms (wrapper Scikit-learn). Giao thức `deploy` đo champion ở 0.683 ms, nên kịch bản này cần **chạy lại tìm kiếm với giao thức `deploy`**, không thể kết luận là "không khả thi".
 
 **Nhận xét:** Ưu thế của TPE rõ nhất khi ngân sách chặt. Ở $\varepsilon = 2$ ms, TPE có 21 trial khả thi so với 4 của RS, và nghiệm tốt nhất là 0.8299 so với 0.8395. Khi nới lên 4.5–5 ms, RS bắt kịp về Val RMSE (0.8290 so với 0.8297). Đây là so sánh mô tả trên log gộp, chưa kiểm định thống kê.
 
@@ -198,7 +202,7 @@ Báo cáo thống kê trung bình $\pm$ độ lệch chuẩn trên 5 random seed
 
 ### 5. Visualizations & Engineering Analysis
 
-* **Biên Pareto Khả thi (`results/figures/pareto_frontier.png`):** Thể hiện rõ sự đánh đổi giữa sai số dự báo và độ trễ trong không gian tìm kiếm.
+* **Biên Pareto Khả thi (`results/figures/pareto_frontier.png`):** Val RMSE theo P95 pha tìm kiếm (trục ngang thang log) của toàn bộ 1.000 trial, kèm biên Pareto của các trial khả thi. Hình thoi tím là nghiệm tốt nhất của Random Search ($L=6$, 0.8290, 3.71 ms); ngôi sao là nghiệm được chọn của Optuna TPE ($L=1$, 0.8297, 3.92 ms). Trong log pha tìm kiếm, nghiệm của Random Search nhỉnh hơn một chút ở cả hai trục; nghiệm của Optuna được triển khai vì là nghiệm của phương pháp chính, và khi đo trên đường triển khai thì nhanh hơn (0.683 so với 0.936 ms), gọn hơn (10 so với 45 đặc trưng) và tốt hơn trên Test (1.1774 so với 1.1891).
 * **Đường cong Hội tụ (`results/figures/convergence_comparison.png`):** Optuna TPE với cơ chế lấy mẫu có điều kiện đạt giá trị RMSE trung bình ổn định hơn qua 5 seeds.
 * **Phân chia Tập dữ liệu (`results/figures/train_val_test_split.png`):** Minh họa trực quan dòng thời gian 2023–2025 không có hiện tượng rò rỉ dữ liệu.
 * **Đối chiếu Thực tế vs Dự báo (`results/figures/actual_vs_predicted_test.png`):** Minh họa khả năng bám sát lượng mưa của mô hình tối ưu trên các trận mưa dông đỉnh điểm tháng 10/2025.
@@ -241,7 +245,7 @@ pip install -r requirements.txt
    ```bash
    python src/models/train.py --L 1 --n-estimators 150 --max-depth 12 --learning-rate 0.0215 --min-child-samples 20
    ```
-5. **Chạy Demo suy luận thời gian thực & cảnh báo ngập:**
+5. **Chạy Demo suy luận & cảnh báo ngập (mô phỏng với dữ liệu quan trắc lịch sử):**
    ```bash
    python src/demo_predict.py
    ```
@@ -289,8 +293,24 @@ pip install -r requirements.txt
    - Để mô phỏng sát nhất kịch bản vận hành thực tế và thách thức chuyển dịch mùa tự nhiên (với H2 là mùa mưa đỉnh điểm), nghiên cứu hiện tại áp dụng một phân chia theo trình tự thời gian cố định: Huấn luyện (2023–2024), Đánh giá kiểm định (H1/2025) và Kiểm thử độc lập (H2/2025). Hướng phát triển tiếp theo là áp dụng phương pháp Time-Series Rolling-Origin Cross-Validation (hoặc Expanding Window CV) qua nhiều chu kỳ năm khác nhau nhằm đo lường tính khái quát hóa và độ ổn định dài hạn của các mô hình.
 7. **Số lượng Seed & Khả năng Tái lập Tỷ lệ Khả thi:**
    - Với 5 seeds, kiểm định theo seed không thể đạt $p < 0.05$ bằng Wilcoxon hai phía; cần $\ge 6$ seeds (khuyến nghị 10) để khẳng định ưu thế tỷ lệ khả thi một cách chặt chẽ.
-   - Nhật ký tìm kiếm hiện có được đo bằng wrapper Scikit-learn (commit `1da4ab6`). Code hiện tại đo bằng đường triển khai nhanh hơn (`booster_.predict` + trích đặc trưng NumPy), nên chạy lại tìm kiếm sẽ cho tỷ lệ khả thi khác. Để so sánh có ý nghĩa, cần chạy lại **cả hai** phương pháp với cùng phiên bản code.
+   - Nhật ký tìm kiếm hiện có được đo bằng giao thức `search` (wrapper Scikit-learn, commit `1da4ab6`), và `optimize_*.py` hiện tại vẫn dùng giao thức này. Giao thức `deploy` (`booster_.predict` + trích đặc trưng NumPy) chỉ dùng cho champion và bảng đối chuẩn.
+   - **Nhiễu đo theo thời gian chi phối $P_{95}$ của pha tìm kiếm.** Với một mẫu đơn, chi phí duyệt tối đa 300 cây chỉ cỡ micro-giây, nhỏ hơn nhiều so với overhead cố định của wrapper; trong log, $P_{95}$ gần như không tương quan với `n_estimators` (Spearman $\approx 0.01$) và chỉ tương quan vừa với $L$ (0.32–0.42). Trong khi đó, trung vị $P_{95}$ theo từng khối 20 trial liên tiếp của cùng một seed dao động từ 2.07 đến 6.75 ms (Optuna) và từ 2.94 đến 6.46 ms (Random Search). Vì vậy cờ khả thi của một trial phản ánh đáng kể thời điểm chạy, không chỉ cấu hình.
+   - Hệ quả cho RQ1/RQ2: $L$ là yếu tố thật (Random Search khả thi 86.8% ở $L=1$ nhưng chỉ 24.6% ở $L=72$), và TPE dồn mẫu về $L \in \{1, 2\}$ (45.0% số trial so với 22.8% của Random Search). Áp tỷ lệ khả thi theo từng $L$ của Random Search lên phân bố $L$ của TPE cho 57.5%, tức khoảng 8.9 trong 13.8 điểm phần trăm chênh lệch được giải thích bởi việc TPE chọn cửa sổ ngắn. Phần còn lại (~4.9 pp) không tách được khỏi trạng thái máy, vì hai phương pháp chạy ở hai thời điểm khác nhau. Lần chạy lại nên xen kẽ trial của hai phương pháp (hoặc chạy song song trên cùng điều kiện) và đo lặp mỗi cấu hình.
    - Nhật ký hiện có không ghi thời gian từng trial, nên chi phí tìm kiếm mới chỉ được báo cáo bằng số lượt đánh giá. Lần chạy lại sẽ có cột `trial_time_s`.
+8. **Chưa phải hệ thống dự báo trực tiếp:**
+   - "Thời gian thực" trong đề tài nghĩa là **suy luận đủ nhanh** để chạy thời gian thực ($P_{95} = 0.683\text{ ms} \ll 5\text{ ms}$). Dự án chưa nối với nguồn dữ liệu trực tiếp: demo dùng các giờ quan trắc thật trong tập Test hoặc giá trị do người dùng nhập. Bản thân Meteostat cũng không phải nguồn trực tiếp: dữ liệu tải ngày 29/10/2026 chỉ có tới 30/03/2026.
+
+---
+
+## 7. Hướng phát triển (Future Work)
+
+1. **Đường dữ liệu trực tiếp để dự báo thời gian thực:**
+   - Nguồn trực tiếp gần nhất là bản tin METAR của sân bay Tân Sơn Nhất (mã `VVTS`, API công khai `aviationweather.gov`): cứ 30 phút một bản tin, về tới nơi trễ khoảng 5–8 phút, có nhiệt độ, điểm sương, áp suất QNH và gió (đơn vị knot), nhưng **không có lượng mưa theo mm** mà chỉ có mã hiện tượng (`-RA`, `TSRA`, `+TSRA`). Mô hình hiện tại cần lượng mưa giờ hiện tại (`prcp`) làm đầu vào.
+   - Ba hướng xử lý: (A) xin dữ liệu trạm đo mưa tự động theo giờ và giữ nguyên mô hình; (B) huấn luyện lại với đầu vào lấy từ METAR (mức mưa suy ra từ mã hiện tượng thay cho `prcp`), giữ nguyên toàn bộ khung tối ưu, ràng buộc và đánh giá; (C) tự lắp cảm biến đo mưa rồi hiệu chỉnh lại.
+   - Phần mềm cần thêm: bộ thu dữ liệu chạy mỗi 30–60 phút, điền khuyết đúng quy tắc lúc huấn luyện, dự báo bằng `extract_features_from_array` + `booster_.predict` (với $L=1$ chỉ cần quan trắc mới nhất), cảnh báo khi vượt ngưỡng, giám sát sai số sau mỗi giờ và huấn luyện lại định kỳ. Trong hệ thống thật, độ trễ toàn trình do thời gian dữ liệu về quyết định (vài phút), còn khâu suy luận (dưới 1 ms) gần như không đáng kể.
+2. **Chạy lại tìm kiếm với 10 seeds:** ghi thời gian từng trial (`trial_time_s`) và có đủ seed cho kiểm định theo seed. Nếu chuyển ràng buộc sang giao thức `deploy` (nhanh hơn nhiều: 4 cấu hình chạy thử chỉ mất khoảng 0.5–0.8 ms), nhiều khả năng phải đặt $\varepsilon$ chặt hơn (ví dụ 1 ms) để ràng buộc còn ý nghĩa.
+3. **Mở rộng không gian lên 400–500 cây** như đề cương dự kiến (RQ3), chạy lại cả hai phương pháp với cùng một giao thức đo.
+4. **Kiểm định chéo rolling-origin** qua nhiều năm để đo độ ổn định dài hạn (xem hạn chế 6).
 
 ---
 

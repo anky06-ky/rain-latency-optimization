@@ -22,10 +22,18 @@ from src.features.build_features import (
     split_time_series,
     extract_single_sample_features,
     extract_features_from_array,
+    check_quality_gate,
     RAW_WINDOW_COLS,
+    MAX_PRCP_MISSING_RATE,
 )
-from src.evaluation.latency import benchmark_end_to_end_latency, LATENCY_CONSTRAINT_MS
+from src.evaluation.latency import (
+    benchmark_end_to_end_latency,
+    extract_features_search_protocol,
+    LATENCY_CONSTRAINT_MS,
+    SEARCH_PROTOCOL,
+)
 from src.evaluation.epsilon_scenarios import compute_epsilon_scenarios
+from src.models.optimize_random import sample_random_configuration, N_ESTIMATORS_CANDIDATES
 
 
 @pytest.fixture(scope="session")
@@ -200,7 +208,7 @@ class TestPipeline:
         """Mỗi ngân sách độ trễ chọn trial có RMSE thấp nhất với P95 <= eps; eps = 5 ms theo cờ is_feasible."""
         history = pd.DataFrame({
             "seed": [1, 1, 1, 1], "trial": [1, 2, 3, 4],
-            "L": [1, 2, 6, 24], "n_estimators": [50, 100, 200, 500], "max_depth": [2, 4, 8, 12],
+            "L": [1, 2, 6, 24], "n_estimators": [50, 100, 200, 300], "max_depth": [2, 4, 8, 12],
             "num_leaves": [7, 15, 31, 127], "learning_rate": [0.1, 0.05, 0.03, 0.02], "min_child_samples": [10, 20, 50, 100],
             "val_rmse": [0.90, 0.85, 0.80, 0.70],
             "p95_latency_ms": [1.2, 2.5, 4.9, 5.2],
@@ -215,3 +223,41 @@ class TestPipeline:
         # Trial có RMSE 0.70 vi phạm ràng buộc 5 ms và tuyệt đối không được chọn
         assert opt.loc[LATENCY_CONSTRAINT_MS, "trial"] == 3
         assert opt.loc[LATENCY_CONSTRAINT_MS, "val_rmse"] == pytest.approx(0.80)
+
+    def test_quality_gate_missing_rate(self, clean_data):
+        """Cổng chất lượng: mỗi năm 2023-2025 thiếu prcp <= 5%; một năm vượt ngưỡng phải bị chặn."""
+        rates = check_quality_gate(clean_data)
+        assert sorted(rates.index) == [2023, 2024, 2025]
+        assert (rates <= MAX_PRCP_MISSING_RATE).all(), f"Missing rate above threshold: {rates.to_dict()}"
+
+        # Xóa toàn bộ lượng mưa năm 2024 (thiếu 100%) thì cổng phải báo lỗi
+        broken = clean_data[["time", "prcp"]].copy()
+        broken.loc[broken["time"].dt.year == 2024, "prcp"] = np.nan
+        with pytest.raises(ValueError, match="Quality gate failed"):
+            check_quality_gate(broken)
+
+    def test_search_space_matches_logged_trials(self):
+        """Không gian tìm kiếm trong code phải là không gian đã sinh ra log results/optimization_history_*.csv."""
+        cols = ["L", "n_estimators", "max_depth", "num_leaves", "learning_rate", "min_child_samples"]
+        rs = pd.read_csv(PROJECT_ROOT / "results" / "optimization_history_random.csv")
+        # Sampler Random Search là tất định theo (seed, trial): phải tái tạo đúng từng cấu hình đã ghi
+        for row in rs.itertuples():
+            logged = {c: getattr(row, c) for c in cols}
+            assert sample_random_configuration(row.seed * 1000 + row.trial) == logged, f"seed={row.seed} trial={row.trial}"
+
+        opt = pd.read_csv(PROJECT_ROOT / "results" / "optimization_history_optuna.csv")
+        for df in (rs, opt):
+            assert sorted(df["n_estimators"].unique()) == N_ESTIMATORS_CANDIDATES
+
+    def test_search_protocol_latency(self, clean_data):
+        """Giao thức pha tìm kiếm cho cùng vector đặc trưng như đường triển khai và báo đúng giao thức đã dùng."""
+        for test_L in [1, 3, 24]:
+            window = clean_data.iloc[1000 - test_L : 1000]
+            np.testing.assert_array_equal(
+                extract_features_search_protocol(window, test_L), extract_single_sample_features(window, L=test_L)
+            )
+        model = joblib.load(PROJECT_ROOT / "models" / "best_optuna_lgb.joblib")
+        res = benchmark_end_to_end_latency(model, clean_data.iloc[-1:], L=1, n_runs=20, warmup=5, protocol=SEARCH_PROTOCOL)
+        assert res["protocol"] == SEARCH_PROTOCOL and res["p95_latency_ms"] > 0
+        with pytest.raises(ValueError):
+            benchmark_end_to_end_latency(model, clean_data.iloc[-1:], L=1, protocol="sklearn")
