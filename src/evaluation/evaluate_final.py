@@ -160,20 +160,23 @@ def plot_pareto_frontier(df_all: pd.DataFrame):
                 zorder=4,
             )
 
-        best_row = feasible.loc[feasible["val_rmse"].idxmin()]
-        plt.scatter(
-            [best_row["p95_latency_ms"]],
-            [best_row["val_rmse"]],
-            color="#fd8d3c",
-            edgecolors="black",
-            s=220,
-            marker="*",
-            zorder=5,
-            label=f"Nghiệm tối ưu: L={int(best_row['L'])}h (RMSE={best_row['val_rmse']:.4f})",
-        )
+        # Tốt nhất của từng phương pháp; nghiệm được triển khai là của Optuna TPE (xem evaluate_final_test_set)
+        for method, marker, color, size in (("RandomSearch", "D", "#756bb1", 110), ("OptunaTPE", "*", "#fd8d3c", 260)):
+            sub = feasible[feasible["method"] == method]
+            if sub.empty:
+                continue
+            best_row = sub.loc[sub["val_rmse"].idxmin()]
+            name = "Optuna TPE (được chọn)" if method == "OptunaTPE" else "Random Search"
+            plt.scatter(
+                [best_row["p95_latency_ms"]], [best_row["val_rmse"]], color=color, edgecolors="black", s=size, marker=marker,
+                zorder=5, label=f"Tốt nhất {name}: L={int(best_row['L'])}h, RMSE={best_row['val_rmse']:.4f}",
+            )
 
     plt.title("Đánh đổi Khả thi: Sai số Validation (RMSE) vs Độ trễ suy luận ($T_{e2e}$)", fontsize=12, fontweight="bold")
-    plt.xlabel("End-to-End Latency P95 (ms)", fontsize=11)
+    # Thang log: phần lớn trial nằm trong 1–10 ms nhưng có vài trial tới >100 ms
+    plt.xscale("log")
+    plt.xticks([2, 3, 5, 10, 20, 50, 100], ["2", "3", "5", "10", "20", "50", "100"])
+    plt.xlabel("End-to-End Latency P95 (ms, thang log)", fontsize=11)
     plt.ylabel("Validation RMSE (mm/h)", fontsize=11)
     plt.grid(True, linestyle=":", alpha=0.6)
     plt.legend(fontsize=10, loc="upper right")

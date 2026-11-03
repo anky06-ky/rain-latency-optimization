@@ -27,11 +27,28 @@ PROCESSED_DATA_DIR = Path("data/processed")
 BASE_NUMERIC_COLS = ["temp", "dwpt", "rhum", "pres", "wspd"]
 # Đầu vào thô theo từng giờ dùng để tạo đặc trưng trễ (thứ tự này quyết định thứ tự cột đặc trưng)
 RAW_WINDOW_COLS = BASE_NUMERIC_COLS + ["prcp_clean"]
+# Ngưỡng GO/NO-GO của cổng kiểm soát chất lượng: tỷ lệ thiếu lượng mưa của mỗi năm không vượt 5%
+MAX_PRCP_MISSING_RATE = 0.05
+
+
+def check_quality_gate(df: pd.DataFrame) -> pd.Series:
+    """
+    Cổng kiểm soát chất lượng: tính tỷ lệ thiếu `prcp` (chưa điền khuyết) theo từng năm và báo lỗi nếu có năm
+    vượt MAX_PRCP_MISSING_RATE. Đây là quy tắc đã loại năm 2021 (thiếu 100%) và 2022 (40.23%) trong
+    notebooks/01_weather_eda.ipynb; giai đoạn 2023-2025 thiếu lần lượt 0% / 2.93% / 3.47% (gộp 2.13%).
+    Trả về: Series tỷ lệ thiếu theo năm.
+    """
+    rates = df["prcp"].isna().groupby(df["time"].dt.year).mean()
+    failing = rates[rates > MAX_PRCP_MISSING_RATE]
+    if not failing.empty:
+        detail = ", ".join(f"{year}: {rate:.2%}" for year, rate in failing.items())
+        raise ValueError(f"Quality gate failed: prcp missing rate above {MAX_PRCP_MISSING_RATE:.0%} ({detail})")
+    return rates
 
 
 def load_clean_weather_data(filepath: Path = RAW_DATA_PATH) -> pd.DataFrame:
     """
-    Đọc file CSV thô của Meteostat và lọc qua cổng kiểm soát chất lượng (2023-2025).
+    Đọc file CSV thô của Meteostat và lọc qua cổng kiểm soát chất lượng (2023-2025, mỗi năm thiếu prcp ≤ 5%).
     Dùng điền khuyết nhân quả nghiêm ngặt (chỉ dùng quá khứ) để tránh rò rỉ dữ liệu tương lai:
     - Các biến vật lý liên tục (temp, dwpt, rhum, pres, wspd): điền tiến (ffill) tối đa 2 giờ.
     - Lượng mưa: điền tiến khoảng trống ngắn tối đa 1 giờ, phần còn thiếu coi là 0.0 khi tạo đặc trưng trễ.
@@ -45,6 +62,8 @@ def load_clean_weather_data(filepath: Path = RAW_DATA_PATH) -> pd.DataFrame:
     # Cổng kiểm soát chất lượng: lọc giai đoạn dữ liệu sạch (2023-01-01 đến 2025-12-31)
     df = df[(df["time"] >= "2023-01-01") & (df["time"] <= "2025-12-31 23:59:59")].copy()
     df = df.sort_values("time").reset_index(drop=True)
+    # Kiểm tra tỷ lệ thiếu lượng mưa theo năm trên dữ liệu gốc, trước khi điền khuyết
+    check_quality_gate(df)
 
     # Điền tiến (ffill) nhân quả nghiêm ngặt cho các biến thời tiết liên tục (không dùng giá trị tương lai)
     df[BASE_NUMERIC_COLS] = df[BASE_NUMERIC_COLS].ffill(limit=2)
