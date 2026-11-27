@@ -7,7 +7,7 @@ Module này giải lại bài toán cho nhiều ngân sách triển khai eps, ch
 results/optimization_history_*.csv. Không huấn luyện lại mô hình nào và không hề chạm tới tập Test, nên
 bảng này thuần túy là việc đọc lại lịch sử tìm kiếm và có thể sinh lại trong vài giây.
 
-Lưu ý: các giá trị P95 trong log đến từ pha tìm kiếm (wrapper scikit-learn, commit 1da4ab6) và cao hơn
+Lưu ý: các giá trị P95 trong log đến từ pha tìm kiếm (wrapper scikit-learn, commit a9e96f0) và cao hơn
 đường triển khai booster_.predict (P95 của champion ~0.68 ms). Vì vậy kịch bản rỗng nghĩa là "không có
 trial nào trong log đạt eps theo cách đo của pha tìm kiếm", chứ không phải eps không thể đạt khi triển khai.
 

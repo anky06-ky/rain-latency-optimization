@@ -8,7 +8,7 @@ Module đánh giá độ trễ suy luận.
 
 Quy trình đo: `warmup` lần gọi không bấm giờ, rồi `n_runs` lần gọi có bấm giờ; tính khả thi được xét
 trên P95 của các lần đo đó. Có hai giao thức đo, khác nhau ở đường suy luận được bấm giờ:
-- SEARCH_PROTOCOL ("search"): giao thức đã sinh ra results/optimization_history_*.csv (commit 1da4ab6),
+- SEARCH_PROTOCOL ("search"): giao thức đã sinh ra results/optimization_history_*.csv (commit a9e96f0),
   dùng trong optimize_*.py. Chọn tập con cột DataFrame ở mỗi lần gọi, wrapper scikit-learn model.predict,
   GC của Python vẫn bật. Chạy lại tìm kiếm bằng giao thức này mới so sánh được với log hiện có.
 - DEPLOY_PROTOCOL ("deploy", mặc định): đường triển khai, dùng cho mô hình champion và bảng đối chuẩn.
@@ -35,7 +35,7 @@ DEPLOY_PROTOCOL = "deploy"
 
 def extract_features_search_protocol(raw_window_slice: pd.DataFrame, L: int) -> np.ndarray:
     """
-    Bộ trích đặc trưng của giao thức "search" (commit 1da4ab6). Cho cùng vector đặc trưng như
+    Bộ trích đặc trưng của giao thức "search" (commit a9e96f0). Cho cùng vector đặc trưng như
     extract_single_sample_features, nhưng chọn tập con cột (df[[...]]) nên tạo DataFrame mới ở mỗi lần gọi;
     đây là phần chi phí mà log pha tìm kiếm đã đo.
     """
@@ -83,7 +83,7 @@ def benchmark_end_to_end_latency(
     gc_was_enabled = gc.isenabled()
     with warnings.catch_warnings():
         # Mô hình học trên DataFrame nhưng dự báo trên mảng NumPy: bỏ cảnh báo tên cột của scikit-learn
-        # (commit 1da4ab6 cũng bỏ cảnh báo này)
+        # (commit a9e96f0 cũng bỏ cảnh báo này)
         warnings.simplefilter("ignore", UserWarning)
 
         # 1. Các lần chạy warmup (làm nóng cache, JIT, threadpool của OpenMP)

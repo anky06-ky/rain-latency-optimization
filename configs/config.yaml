@@ -24,7 +24,7 @@ constraints:
     warmup: 20
     metric: "P95"
     # Giao thức đo (src/evaluation/latency.py):
-    #   search: optimize_*.py, đã sinh ra results/optimization_history_*.csv (commit 1da4ab6):
+    #   search: optimize_*.py, đã sinh ra results/optimization_history_*.csv (commit a9e96f0):
     #           chọn cột DataFrame mỗi lần gọi + model.predict của scikit-learn, GC bật
     #   deploy: champion và bảng đối chuẩn: trích đặc trưng NumPy + booster_.predict, GC tạm dừng
     search_protocol: "search"
